@@ -7,7 +7,7 @@ import re
 import sqlite3
 import subprocess
 import tempfile
-import uuid
+import shortuuid
 from typing import List, Optional
 
 import typer
@@ -58,7 +58,7 @@ def add(
         )
         raise typer.Exit(1)
 
-    note_uuid = str(uuid.uuid4())
+    note_id = str(shortuuid.uuid())[:8]
     initial_content = format_yaml_frontmatter(title, para, [])
 
     fd, tmp_path = tempfile.mkstemp(suffix=".md")
@@ -94,11 +94,21 @@ def add(
 
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO notes (id, title, content, para_category, tags) VALUES (?, ?, ?, ?, ?)",
-                (note_uuid, final_title, edited_content, final_para, final_tags),
-            )
-            conn.commit()
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    cursor.execute(
+                        "INSERT INTO notes (id, title, content, para_category, tags) VALUES (?, ?, ?, ?, ?)",
+                        (note_id, final_title, edited_content, final_para, final_tags),
+                    )
+                    conn.commit()
+                    break
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint failed: notes.id" in str(e) and attempt < max_retries - 1:
+                        note_id = str(shortuuid.uuid())[:8]
+                        continue
+                    console.print(f"[red]Error saving note: {e}[/red]")
+                    raise typer.Exit(1) from e
         console.print(f"[green]Note '{final_title}' added successfully.[/green]")
     finally:
         if os.path.exists(tmp_path):
@@ -315,7 +325,7 @@ def search(
 
             if para:
                 sql = """
-                    SELECT n.title, n.para_category, n.updated_at, n.content,
+                    SELECT n.id, n.title, n.para_category, n.updated_at, n.content,
                            snippet(notes_fts, -1, '[bold yellow]', '[/bold yellow]', '...', 20)
                     FROM notes_fts
                     JOIN notes n ON notes_fts.rowid = n.rowid
@@ -325,7 +335,7 @@ def search(
                 params = (query, para)
             else:
                 sql = """
-                    SELECT n.title, n.para_category, n.updated_at, n.content,
+                    SELECT n.id, n.title, n.para_category, n.updated_at, n.content,
                            snippet(notes_fts, -1, '[bold yellow]', '[/bold yellow]', '...', 20)
                     FROM notes_fts
                     JOIN notes n ON notes_fts.rowid = n.rowid
@@ -346,22 +356,23 @@ def search(
 
     if raw:
         xml_output = []
-        for title, category, updated_at, content, snippet in results:
+        for note_id, title, category, updated_at, content, snippet in results:
             xml_output.append(
-                f'<context><note title="{title}" category="{category}" last_updated="{updated_at}">{content}</note></context>'
+                f'<context><note id="{note_id}" title="{title}" category="{category}" last_updated="{updated_at}">{content}</note></context>'
             )
         print("\n".join(xml_output))
     else:
         table = Table(title=f"Search Results for '{query}'")
+        table.add_column("ID", style="dim white")
         table.add_column("Title", style="cyan")
         table.add_column("Category", style="magenta")
         table.add_column("Snippet", style="white")
         table.add_column("Last Updated", style="green")
 
-        for title, category, updated_at, content, snippet in results:
+        for note_id, title, category, updated_at, content, snippet in results:
             # Replace literal newlines in snippet to keep table clean
             clean_snippet = (snippet or "").replace("\n", " ")
-            table.add_row(title, category, clean_snippet, str(updated_at))
+            table.add_row(note_id, title, category, clean_snippet, str(updated_at))
 
         console.print(table)
 
@@ -381,7 +392,7 @@ def list_notes(
     with get_db() as conn:
         cursor = conn.cursor()
 
-        query_sql = "SELECT title, para_category, tags FROM notes"
+        query_sql = "SELECT id, title, para_category, tags FROM notes"
         params = ()
 
         if para:
@@ -394,12 +405,12 @@ def list_notes(
     if tags:
         filter_tags = [t.strip().lower() for t in tags.split(",") if t.strip()]
         filtered_results = []
-        for title, cat, tags_str in results:
+        for note_id, title, cat, tags_str in results:
             note_tags = [
                 t.strip().lower() for t in (tags_str or "").split(",") if t.strip()
             ]
             if any(ft in note_tags for ft in filter_tags):
-                filtered_results.append((title, cat, tags_str))
+                filtered_results.append((note_id, title, cat, tags_str))
         results = filtered_results
 
     if not results:
@@ -409,15 +420,19 @@ def list_notes(
     tree = Tree("Nexus")
 
     categories = {}
-    for title, cat, tags_str in results:
-        categories.setdefault(cat, []).append((title, tags_str))
+    for note_id, title, cat, tags_str in results:
+        categories.setdefault(cat, []).append((note_id, title, tags_str))
 
     for cat in ["Project", "Area", "Resource", "Archive"]:
         if cat in categories:
             cat_display = f"[bold cyan]{cat}s[/bold cyan]"
             cat_node = tree.add(cat_display)
-            for title, tags_str in sorted(categories[cat], key=lambda x: x[0].lower()):
-                node_text = f"[green]{title}[/green]"
+            for (
+                note_id,
+                title,
+                tags_str,
+            ) in sorted(categories[cat], key=lambda x: x[1].lower()):
+                node_text = f"[dim white]{note_id}[/dim white] | [green]{title}[/green]"
                 if tags_str:
                     formatted_tags = ", ".join(
                         t.strip() for t in tags_str.split(",") if t.strip()
@@ -437,7 +452,7 @@ def search_nexus_notes(query: str, category: Optional[str] = None) -> str:
             cursor = conn.cursor()
             if category:
                 sql = """
-                    SELECT n.title, n.para_category, n.updated_at, n.content 
+                    SELECT n.id, n.title, n.para_category, n.updated_at, n.content 
                     FROM notes_fts f
                     JOIN notes n ON f.rowid = n.rowid
                     WHERE notes_fts MATCH ? AND n.para_category = ?
@@ -446,7 +461,7 @@ def search_nexus_notes(query: str, category: Optional[str] = None) -> str:
                 params = (query, category)
             else:
                 sql = """
-                    SELECT n.title, n.para_category, n.updated_at, n.content 
+                    SELECT n.id, n.title, n.para_category, n.updated_at, n.content 
                     FROM notes_fts f
                     JOIN notes n ON f.rowid = n.rowid
                     WHERE notes_fts MATCH ?
@@ -458,9 +473,9 @@ def search_nexus_notes(query: str, category: Optional[str] = None) -> str:
             results = cursor.fetchall()
 
             out = []
-            for title, cat, updated_at, content in results:
+            for note_id, title, cat, updated_at, content in results:
                 out.append(
-                    f'<context><note title="{title}" category="{cat}" last_updated="{updated_at}">{content}</note></context>'
+                    f'<context><note id="{note_id}" title="{title}" category="{cat}" last_updated="{updated_at}">{content}</note></context>'
                 )
             return "\n".join(out) if out else "No notes found."
 
@@ -474,7 +489,7 @@ def get_project_context(project_name: str) -> str:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT title, para_category, updated_at, content FROM notes WHERE title = ? AND para_category = 'Project'",
+            "SELECT id, title, para_category, updated_at, content FROM notes WHERE title = ? AND para_category = 'Project'",
             (project_name,),
         )
         row = cursor.fetchone()
@@ -482,8 +497,8 @@ def get_project_context(project_name: str) -> str:
     if not row:
         return f"Project '{project_name}' not found."
 
-    title, category, updated_at, content = row
-    return f'<context><note title="{title}" category="{category}" last_updated="{updated_at}">{content}</note></context>'
+    note_id, title, category, updated_at, content = row
+    return f'<context><note id="{note_id}" title="{title}" category="{category}" last_updated="{updated_at}">{content}</note></context>'
 
 
 @app.command()

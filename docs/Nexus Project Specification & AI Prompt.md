@@ -31,7 +31,7 @@ tags: [python, security, api]
 ```
 
 **SQLite Core Table (`notes`)**
-* `id` (TEXT): UUIDv4 primary key.
+* `id` (TEXT): Short ID (8-character) primary key.
 * `title` (TEXT): Parsed from frontmatter.
 * `content` (TEXT): The full raw Markdown (including the frontmatter block).
 * `para_category` (TEXT): Parsed from frontmatter, enforced via `CHECK` constraint (`Project`, `Area`, `Resource`, `Archive`).
@@ -43,7 +43,7 @@ tags: [python, security, api]
 * Three SQLite triggers (`notes_ai`, `notes_ad`, `notes_au`) intercept all database modifications and automatically update the `notes_fts` index. The Python layer never manually updates this index.
 
 ### 4. Core Workflows
-* **`nexus add [Title] --para [P|A|R|A]`**: Generates a UUID and a temp Markdown file with YAML frontmatter. Launches `$EDITOR`. On save, parses YAML and `INSERT`s into SQLite.
+* **`nexus add [Title] --para [P|A|R|A]`**: Generates a Short ID and a temp Markdown file with YAML frontmatter. Launches `$EDITOR`. On save, parses YAML and `INSERT`s into SQLite.
 * **`nexus edit [ID|Title]`**: Fetches document from SQLite, opens `$EDITOR`. On save, if modified, validates YAML frontmatter and `UPDATE`s SQLite.
 * **`nexus move [ID|Title] --to [P|A|R|A]`**: Programmatically parses and reconstructs the YAML frontmatter block to update the `para:` category, then `UPDATE`s SQLite. This ensures the body of the note is never accidentally modified.
 * **`nexus delete [ID|Title]`**: Removes a note from the database after a user confirmation.
@@ -79,7 +79,7 @@ nexus_project/
 
 ### 3. Database Schema (`nexus_cli/db.py`)
 Implement an `init_db()` function executing the following:
-1. **Core Table (`notes`):** `id` (TEXT UUIDv4), `title` (TEXT), `content` (TEXT), `para_category` (TEXT CHECK), `tags` (TEXT), `created_at`, `updated_at`.
+1. **Core Table (`notes`):** `id` (TEXT Short ID), `title` (TEXT), `content` (TEXT), `para_category` (TEXT CHECK), `tags` (TEXT), `created_at`, `updated_at`.
 2. **Search Index (`notes_fts`):** FTS5 virtual table indexing `title`, `content`, and `tags` (linked via `content='notes'` and `content_rowid='rowid'`).
 3. **Triggers:** Create `notes_ai`, `notes_ad`, `notes_au` to auto-sync `notes_fts` on INSERT, DELETE, and UPDATE.
 
@@ -88,7 +88,7 @@ Implement `extract_frontmatter(raw_content: str) -> tuple[dict, str]` using Pyth
 
 ### 5. CLI Commands (`nexus_cli/main.py`)
 Use `typer` for routing and `rich` for terminal output. Implement:
-* `add`: Generate UUID -> Temp file with YAML -> Open `$EDITOR` -> Parse & Validate -> Insert to DB.
+* `add`: Generate Short ID -> Temp file with YAML -> Open `$EDITOR` -> Parse & Validate -> Insert to DB.
 * `edit`: Fetch -> Temp file -> Open `$EDITOR` -> Parse & Validate -> Update DB.
 * `move`: Parse and reconstruct frontmatter block to update `para:` field -> Update DB.
 * `delete`: Prompt for confirmation -> Delete from DB.

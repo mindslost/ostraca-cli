@@ -29,7 +29,7 @@ nexus_project/
 
 **Module A: Database Schema (`nexus_cli/db.py`)**
 Implement an `init_db()` function executing this exact schema:
-1. Core Table (`notes`): `id` (TEXT UUIDv4), `title` (TEXT), `content` (TEXT), `para_category` (TEXT CHECK: Project, Area, Resource, Archive), `tags` (TEXT), `created_at`, `updated_at`.
+1. Core Table (`notes`): `id` (TEXT Short ID), `title` (TEXT), `content` (TEXT), `para_category` (TEXT CHECK: Project, Area, Resource, Archive), `tags` (TEXT), `created_at`, `updated_at`.
 2. Search Index (`notes_fts`): FTS5 virtual table indexing `title`, `content`, and `tags` (linked via `content='notes'` and `content_rowid='rowid'`).
 3. Auto-Sync Triggers: Create SQLite triggers (`notes_ai`, `notes_ad`, `notes_au`) to auto-sync `notes_fts` on INSERT, DELETE, and UPDATE on the `notes` table.
 
@@ -38,7 +38,7 @@ Implement `extract_frontmatter(raw_content: str) -> tuple[dict, str]` using Pyth
 
 **Module C: CLI Commands (`nexus_cli/main.py`)**
 Use `typer` for routing and `rich` for terminal UI.
-* `add [title] --para [category]`: Generate UUID -> Create temp file with YAML -> Open `$EDITOR` -> Parse YAML -> Insert to DB.
+* `add [title] --para [category]`: Generate Short ID -> Create temp file with YAML -> Open `$EDITOR` -> Parse YAML -> Insert to DB.
 * `edit [identifier]`: Fetch by ID/Title -> Temp file -> Open `$EDITOR` -> If changed, parse YAML and Update DB.
 * `move [identifier] --to [category]`: Fetch -> Use regex to replace `para:` value in YAML -> Update DB.
 * `search [query] [--para category] [--raw]`: Query FTS5 (`MATCH ? ORDER BY rank`). Output `rich` table OR `--raw` XML.

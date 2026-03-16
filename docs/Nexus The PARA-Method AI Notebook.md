@@ -64,7 +64,7 @@ nexus add "Microservice Auth Spec" --para Project
 
 ### 2. Editing Notes
 
-Edit an existing note by its exact title or UUID. Nexus automatically detects if you changed the tags or category in the YAML frontmatter and syncs the database.
+Edit an existing note by its exact title or Short ID. Nexus automatically detects if you changed the tags or category in the YAML frontmatter and syncs the database.
 
 Bash
 
@@ -140,8 +140,7 @@ For developers extending Nexus, here is how the data flows:
 
 1. **Storage Location:** `~/.para_notes.db`
 2. **Schema:**
-   - `notes` table: Stores `id` (UUID), `title`, `content` (Raw Markdown + YAML), `para_category`, `tags`, and timestamps.
-   - `notes_fts` table: An FTS5 virtual table for semantic search.
+   - `notes` table: Stores `id` (Short ID), `title`, `content` (Raw Markdown + YAML), `para_category`, `tags`, and timestamps.   - `notes_fts` table: An FTS5 virtual table for semantic search.
 3. **Auto-Sync:** You do not need to manage the search index in Python. The database contains three native SQLite triggers (`notes_ai`, `notes_ad`, `notes_au`) that automatically sync the FTS5 virtual table whenever the main `notes` table is modified.
 
 ------
