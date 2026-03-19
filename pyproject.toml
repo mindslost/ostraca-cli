@@ -9,11 +9,16 @@ description = "Terminal-based personal knowledge base enforcing the PARA method"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-    "typer>=0.9.0",
-    "rich>=13.0.0",
-    "mcp>=0.1.0",
-    "shortuuid>=1.0.0"
+  "typer>=0.9.0",
+  "rich>=13.0.0",
+  "mcp>=0.1.0",
+  "shortuuid>=1.0.0",
+  "textual>=0.50.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["nexus_cli*"]
+exclude = ["conductor*"]
 
 [project.scripts]
 nexus = "nexus_cli.main:app"

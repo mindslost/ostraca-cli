@@ -21,11 +21,12 @@ from rich.tree import Tree
 
 from nexus_cli.db import get_db, init_db, PARA_CATEGORIES
 from nexus_cli.frontmatter import extract_frontmatter
+from nexus_cli.tui import NexusListApp
 
 # Initialize Typer app and FastMCP server
 app = typer.Typer(
     help="Nexus CLI - A terminal-based personal knowledge base enforcing the PARA method.",
-    add_completion=False,
+    add_completion=True,
 )
 mcp = FastMCP("Nexus")
 console = Console()
@@ -87,6 +88,27 @@ def get_note_by_identifier(identifier: str) -> Optional[Tuple[str, str, str, str
             (identifier, identifier),
         )
         return cursor.fetchone()
+
+
+def complete_note_identifier(incomplete: str) -> List[str]:
+    """Autocompletion function for note IDs and titles."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Fetch all IDs and titles to filter in Python for simplicity and flexibility
+        cursor.execute("SELECT id, title FROM notes")
+        results = cursor.fetchall()
+
+    completions = []
+    incomplete_lower = incomplete.lower()
+    for note_id, title in results:
+        if note_id.lower().startswith(incomplete_lower):
+            completions.append(note_id)
+        elif incomplete_lower in title.lower():
+            # If they are typing the title, return the title wrapped in quotes if it has spaces,
+            # but returning just the ID or Title works. We'll return what matches best.
+            completions.append(title)
+            
+    return completions
 
 
 def edit_content(content: str) -> str:
@@ -228,7 +250,7 @@ def add(
 
 @app.command()
 def edit(
-    identifier: str = typer.Argument(..., help="ID or Title of the note to edit")
+    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to edit")
 ) -> None:
     """
     Edit an existing note's content and metadata.
@@ -275,7 +297,7 @@ def edit(
 
 @app.command(name="open")
 def open_note(
-    identifier: str = typer.Argument(..., help="ID or Title of the note to open")
+    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to open")
 ) -> None:
     """
     Open a note in read-only mode for viewing.
@@ -297,7 +319,7 @@ def open_note(
 
 @app.command()
 def move(
-    identifier: str = typer.Argument(..., help="ID or Title of the note to move"),
+    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to move"),
     to: str = typer.Option(..., help="Target PARA category")
 ) -> None:
     """
@@ -349,7 +371,7 @@ def move(
 
 @app.command()
 def delete(
-    identifier: str = typer.Argument(..., help="ID or Title of the note to delete")
+    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to delete")
 ) -> None:
     """
     Permanently delete a note.
@@ -451,11 +473,15 @@ def list_notes(
     para: Optional[str] = typer.Option(None, help="Filter by PARA category"),
     tags: Optional[str] = typer.Option(
         None, help="Filter by comma-separated tags"),
+    interactive: bool = typer.Option(
+        False, "--interactive", "-i", help="Launch interactive selection TUI"
+    ),
 ) -> None:
     """
     List notes organized in a PARA directory tree.
 
     Supports filtering by category and/or tags.
+    Use --interactive to act on notes.
     """
     if para and para not in PARA_CATEGORIES:
         console.print(
@@ -463,29 +489,62 @@ def list_notes(
         )
         raise typer.Exit(1)
 
-    results = get_filtered_notes(para, tags)
+    if interactive:
+        while True:
+            results = get_filtered_notes(para, tags)
+            if not results:
+                console.print("No notes found matching the criteria.")
+                break
 
-    if not results:
-        console.print("No notes found matching the criteria.")
-        return
+            # Launch the interactive TUI
+            app_instance = NexusListApp(results)
+            result = app_instance.run()
 
-    tree = Tree("Nexus")
-    categories = {}
-    for note_id, title, cat, tags_str in results:
-        categories.setdefault(cat, []).append((note_id, title, tags_str))
+            if not result:
+                break
 
-    for cat in PARA_CATEGORIES:
-        if cat in categories:
-            cat_node = tree.add(f"[bold cyan]{cat}s[/bold cyan]")
-            for note_id, title, tags_str in sorted(categories[cat], key=lambda x: x[1].lower()):
-                node_text = f"[dim white]{note_id}[/dim white] | [green]{title}[/green]"
-                if tags_str:
-                    formatted_tags = ", ".join(
-                        t.strip() for t in tags_str.split(",") if t.strip())
-                    if formatted_tags:
-                        node_text += f" [dim]({formatted_tags})[/dim]"
-                cat_node.add(node_text)
-    console.print(tree)
+            action, data = result
+            if action == "open":
+                open_note(data)
+            elif action == "edit":
+                edit(data)
+            elif action == "delete":
+                # We bypass the standard 'delete' confirmation because the TUI already did it
+                try:
+                    with get_db() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM notes WHERE id = ?", (data,))
+                        conn.commit()
+                    console.print("[green]Note deleted successfully.[/green]")
+                except sqlite3.Error as e:
+                    console.print(f"[red]Failed to delete note: {e}[/red]")
+            elif action == "move":
+                note_id, target_category = data
+                move(note_id, to=target_category)
+    else:
+        results = get_filtered_notes(para, tags)
+        if not results:
+            console.print("No notes found matching the criteria.")
+            return
+
+        # Render static tree
+        tree = Tree("Nexus")
+        categories = {}
+        for note_id, title, cat, tags_str in results:
+            categories.setdefault(cat, []).append((note_id, title, tags_str))
+
+        for cat in PARA_CATEGORIES:
+            if cat in categories:
+                cat_node = tree.add(f"[bold cyan]{cat}s[/bold cyan]")
+                for note_id, title, tags_str in sorted(categories[cat], key=lambda x: x[1].lower()):
+                    node_text = f"[dim white]{note_id}[/dim white] | [green]{title}[/green]"
+                    if tags_str:
+                        formatted_tags = ", ".join(
+                            t.strip() for t in tags_str.split(",") if t.strip())
+                        if formatted_tags:
+                            node_text += f" [dim]({formatted_tags})[/dim]"
+                    cat_node.add(node_text)
+        console.print(tree)
 
 
 @mcp.tool()

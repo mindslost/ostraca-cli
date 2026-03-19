@@ -42,6 +42,16 @@ Nexus is designed to be both a frictionless human interface for knowledge captur
    export EDITOR=nvim  # or your preferred editor
    ```
 
+### Shell Autocompletion
+
+Nexus supports shell autocompletion for note IDs and Titles. To enable it, run the command for your shell:
+
+- **Zsh**: `nexus --install-completion zsh`
+- **Bash**: `nexus --install-completion bash`
+- **Fish**: `nexus --install-completion fish`
+
+*Note: You may need to restart your terminal or source your shell's configuration file (e.g., `source ~/.zshrc`) for changes to take effect.*
+
 ---
 
 ## 📖 Quick Start
@@ -63,6 +73,17 @@ nexus list --tags python,security
 ```
 
 Displays a tree structure of all your notes organized by PARA category.
+
+### 2.1 Interactive Selection TUI
+
+To interactively browse, open (`o`), edit (`e`), move (`m`), or delete (`d`) notes using arrow keys or Vim-style movement (`j/k`):
+
+```bash
+nexus list --interactive
+# or
+nexus list -i
+```
+
 
 ### 3. Search Your Knowledge Base
 
