@@ -1,3 +1,5 @@
+<img width="1060" height="808" alt="image" src="https://github.com/user-attachments/assets/58515586-4e1a-4db5-9cca-56c315635b2f" />
+
 # Nexus
 
 **Nexus CLI**: A blazing-fast, terminal-based personal knowledge base built with Python and SQLite. It natively enforces the **PARA** (Projects, Areas, Resources, Archives) organization method, features lightning-fast full-text search via FTS5, and manages your notes seamlessly through Markdown and your favorite terminal editor.
