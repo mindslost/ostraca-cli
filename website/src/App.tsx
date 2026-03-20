@@ -30,7 +30,7 @@ const Navbar = ({ isOled, toggleOled }: { isOled: boolean, toggleOled: () => voi
     <div className="flex items-center gap-6">
       <a href="#features" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Features</a>
       <a href="#demo" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Demo</a>
-      <a href="#docs" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Docs</a>
+      <a href="https://github.com/mindslost/nexus-cli/blob/main/docs/documentation.md" target="_blank" rel="noreferrer" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Docs</a>
       <button 
         onClick={toggleOled}
         className={`p-2 rounded-full transition-all ${isOled ? 'bg-terminal-green text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}
@@ -398,14 +398,26 @@ nexus mcp-start
           </div>
         </div>
         
-        <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-8 text-sm text-white/40">
-          <div className="flex items-start gap-3">
-            <div className="mt-1 text-terminal-green"><PenLine className="w-4 h-4" /></div>
-            <p>Nexus uses your native <code className="text-white/60">$EDITOR</code> for zero-friction capture in standard Markdown.</p>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="mt-1 text-terminal-cyan"><Cpu className="w-4 h-4" /></div>
-            <p>The MCP server allows LLMs like Claude to autonomously search and retrieve your notes with high fidelity.</p>
+        <div className="mt-12 flex flex-col items-center gap-8">
+          <a 
+            href="https://github.com/mindslost/nexus-cli/blob/main/docs/quickstart.md" 
+            target="_blank" 
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 text-terminal-green hover:text-white transition-colors font-bold group"
+          >
+            View Full Quick Start Guide
+            <ExternalLink className="w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+          </a>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-sm text-white/40">
+            <div className="flex items-start gap-3">
+              <div className="mt-1 text-terminal-green"><PenLine className="w-4 h-4" /></div>
+              <p>Nexus uses your native <code className="text-white/60">$EDITOR</code> for zero-friction capture in standard Markdown.</p>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="mt-1 text-terminal-cyan"><Cpu className="w-4 h-4" /></div>
+              <p>The MCP server allows LLMs like Claude to autonomously search and retrieve your notes with high fidelity.</p>
+            </div>
           </div>
         </div>
       </div>
@@ -508,7 +520,7 @@ const CommandSimulator = () => {
   };
 
   return (
-    <section className="py-24 px-6">
+    <section id="demo" className="py-24 px-6">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-2xl font-bold mb-2">Try it yourself</h2>
@@ -542,7 +554,6 @@ const CommandSimulator = () => {
               onChange={(e) => setInput(e.target.value)}
               placeholder="type 'help'..."
               className="bg-transparent border-none outline-none flex-1 font-mono text-sm text-white placeholder:text-white/20"
-              autoFocus
             />
           </form>
         </div>
@@ -566,13 +577,27 @@ const Footer = () => (
       
       <div className="flex gap-8">
         <a href="https://github.com/mindslost/nexus-cli" className="text-white/40 hover:text-white transition-colors"><Github className="w-5 h-5" /></a>
-        <a href="#" className="text-white/40 hover:text-white transition-colors text-sm font-bold">Documentation</a>
+        <a href="https://github.com/mindslost/nexus-cli/blob/main/docs/documentation.md" target="_blank" rel="noreferrer" className="text-white/40 hover:text-white transition-colors text-sm font-bold">Documentation</a>
         <a href="#" className="text-white/40 hover:text-white transition-colors text-sm font-bold">Changelog</a>
       </div>
       
       <div className="flex items-center gap-4">
-        <div className="px-3 py-1 rounded border border-white/10 text-[10px] font-bold text-white/40">BUILT WITH TYPER</div>
-        <div className="px-3 py-1 rounded border border-white/10 text-[10px] font-bold text-white/40">RICH OUTPUT</div>
+        <a 
+          href="https://github.com/fastapi/typer" 
+          target="_blank" 
+          rel="noreferrer" 
+          className="px-3 py-1 rounded border border-white/10 text-[10px] font-bold text-white/40 hover:text-terminal-green hover:border-terminal-green transition-colors"
+        >
+          BUILT WITH TYPER
+        </a>
+        <a 
+          href="https://github.com/Textualize/rich" 
+          target="_blank" 
+          rel="noreferrer" 
+          className="px-3 py-1 rounded border border-white/10 text-[10px] font-bold text-white/40 hover:text-terminal-green hover:border-terminal-green transition-colors"
+        >
+          RICH OUTPUT
+        </a>
       </div>
     </div>
   </footer>
@@ -582,6 +607,10 @@ const Footer = () => (
 
 export default function App() {
   const [isOled, setIsOled] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   const toggleOled = () => {
     setIsOled(!isOled);

@@ -1,5 +1,5 @@
 {
-  "name": "Nexus CLI Landing Page",
+  "name": "nexus.cli",
   "description": "A terminal-centric landing page for Nexus CLI, the command-line brain for the AI era.",
   "requestFramePermissions": []
 }
