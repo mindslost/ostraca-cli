@@ -571,7 +571,7 @@ const Footer = () => (
           <span className="font-bold tracking-tighter">nexus.cli</span>
         </div>
         <p className="text-white/30 text-xs text-center md:text-left">
-          Built with Typer & Rich. MIT License. © 2026 Jason Lysinger.
+          Built with Typer & Rich. Apache License 2.0. © 2026 Jason Lysinger.
         </p>
       </div>
       
