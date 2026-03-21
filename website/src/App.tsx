@@ -30,7 +30,7 @@ const Navbar = ({ isOled, toggleOled }: { isOled: boolean, toggleOled: () => voi
     <div className="flex items-center gap-6">
       <a href="#features" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Features</a>
       <a href="#demo" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Demo</a>
-      <a href="https://github.com/mindslost/ostraca/blob/main/docs/documentation.md" target="_blank" rel="noreferrer" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Docs</a>
+      <a href="https://github.com/mindslost/ostraca-cli/blob/main/docs/documentation.md" target="_blank" rel="noreferrer" className="text-sm hover:text-terminal-green transition-colors hidden md:block">Docs</a>
       <button 
         onClick={toggleOled}
         className={`p-2 rounded-full transition-all ${isOled ? 'bg-terminal-green text-black' : 'bg-white/5 text-white hover:bg-white/10'}`}
@@ -38,7 +38,7 @@ const Navbar = ({ isOled, toggleOled }: { isOled: boolean, toggleOled: () => voi
       >
         <Power className="w-4 h-4" />
       </button>
-      <a href="https://github.com/mindslost/ostraca" target="_blank" rel="noreferrer" className="bg-white text-black px-4 py-1.5 rounded text-sm font-bold hover:bg-terminal-green transition-colors flex items-center gap-2">
+      <a href="https://github.com/mindslost/ostraca-cli" target="_blank" rel="noreferrer" className="bg-white text-black px-4 py-1.5 rounded text-sm font-bold hover:bg-terminal-green transition-colors flex items-center gap-2">
         <Github className="w-4 h-4" />
         GitHub
       </a>
@@ -322,7 +322,7 @@ const QuickStart = () => {
     {
       label: "1. Installation",
       code: `# Install Ostraca CLI directly from the source
-git clone https://github.com/mindslost/ostraca.git
+git clone https://github.com/mindslost/ostraca-cli.git
 cd ostraca
 pip install -e .`
     },
@@ -400,7 +400,7 @@ ost mcp-start
         
         <div className="mt-12 flex flex-col items-center gap-8">
           <a 
-            href="https://github.com/mindslost/ostraca/blob/main/docs/quickstart.md" 
+            href="https://github.com/mindslost/ostraca-cli/blob/main/docs/quickstart.md" 
             target="_blank" 
             rel="noreferrer"
             className="inline-flex items-center gap-2 text-terminal-green hover:text-white transition-colors font-bold group"
@@ -576,8 +576,8 @@ const Footer = () => (
       </div>
       
       <div className="flex gap-8">
-        <a href="https://github.com/mindslost/ostraca" className="text-white/40 hover:text-white transition-colors"><Github className="w-5 h-5" /></a>
-        <a href="https://github.com/mindslost/ostraca/blob/main/docs/documentation.md" target="_blank" rel="noreferrer" className="text-white/40 hover:text-white transition-colors text-sm font-bold">Documentation</a>
+        <a href="https://github.com/mindslost/ostraca-cli" className="text-white/40 hover:text-white transition-colors"><Github className="w-5 h-5" /></a>
+        <a href="https://github.com/mindslost/ostraca-cli/blob/main/docs/documentation.md" target="_blank" rel="noreferrer" className="text-white/40 hover:text-white transition-colors text-sm font-bold">Documentation</a>
         <a href="#" className="text-white/40 hover:text-white transition-colors text-sm font-bold">Changelog</a>
       </div>
       
