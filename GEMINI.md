@@ -45,6 +45,8 @@ pip install -e .
 - `ost edit [ID|Title]`: Edit an existing note in your `$EDITOR`.
 - `ost move [ID|Title] --to [Category]`: Re-categorize a note.
 - `ost delete [ID|Title]`: Remove a note with a confirmation prompt.
+- `ost backup`: Create a consistent SQLite backup of your database.
+- `ost restore [PATH]`: Restore your database from a backup file.
 - `ost mcp-start`: Launch the MCP server for AI integration.
 
 ### Testing

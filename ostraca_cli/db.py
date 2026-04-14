@@ -6,9 +6,10 @@ and Full-Text Search (FTS5) index synchronization using triggers.
 """
 
 import sqlite3
+import time
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Iterator, List
+from typing import Iterator, List, Optional
 
 # Database file is stored in the user's home directory
 DB_PATH: Path = Path.home() / ".para_notes.db"
@@ -30,6 +31,53 @@ def get_db() -> Iterator[sqlite3.Connection]:
         yield conn
     finally:
         conn.close()
+
+
+def backup_db(target_path: Optional[Path] = None) -> Path:
+    """
+    Create a backup of the SQLite database using its built-in backup API.
+
+    Args:
+        target_path: Optional destination path. Defaults to DB_PATH with a timestamp.
+
+    Returns:
+        The Path to the created backup file.
+    """
+    if not target_path:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        target_path = DB_PATH.with_suffix(f".bak_{timestamp}.db")
+
+    # Ensure the directory for the target exists
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with get_db() as source_conn:
+        dest_conn = sqlite3.connect(target_path)
+        try:
+            with dest_conn:
+                source_conn.backup(dest_conn)
+        finally:
+            dest_conn.close()
+
+    return target_path
+
+
+def restore_db(source_path: Path) -> None:
+    """
+    Restore the SQLite database from a backup file using the built-in backup API.
+
+    Args:
+        source_path: The path to the backup file.
+    """
+    if not source_path.exists():
+        raise FileNotFoundError(f"Backup file not found at: {source_path}")
+
+    # Use the backup API to restore into the live database
+    with get_db() as dest_conn:
+        source_conn = sqlite3.connect(source_path)
+        try:
+            source_conn.backup(dest_conn)
+        finally:
+            source_conn.close()
 
 
 def init_db() -> None:

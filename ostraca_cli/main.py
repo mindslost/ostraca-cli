@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import tempfile
 from typing import List, Optional, Tuple
+from pathlib import Path
 
 import shortuuid
 import typer
@@ -19,7 +20,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 
-from ostraca_cli.db import get_db, init_db, PARA_CATEGORIES
+from ostraca_cli.db import get_db, init_db, backup_db, restore_db, PARA_CATEGORIES
 from ostraca_cli.frontmatter import extract_frontmatter
 from ostraca_cli.tui import OstracaListApp
 
@@ -367,6 +368,64 @@ def move(
     except sqlite3.Error as e:
         console.print(f"[red]Failed to move note: {e}[/red]")
         raise typer.Exit(1) from e
+
+
+@app.command()
+def backup(
+    path: Optional[Path] = typer.Option(
+        None, "--path", "-p", help="Custom destination path for the backup file"
+    )
+) -> None:
+    """
+    Create a backup of the Ostraca database.
+
+    Uses SQLite's built-in backup API to ensure a consistent snapshot.
+    If no path is provided, a timestamped file is created in the same
+    directory as the original database.
+    """
+    try:
+        backup_path = backup_db(path)
+        console.print(
+            f"[green]Backup created successfully at:[/green] [bold cyan]{backup_path}[/bold cyan]"
+        )
+    except Exception as e:
+        console.print(f"[red]Error creating backup: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def restore(
+    path: Path = typer.Argument(
+        ..., exists=True, file_okay=True, dir_okay=False, readable=True, help="Path to the backup file to restore"
+    )
+) -> None:
+    """
+    Restore the Ostraca database from a backup file.
+
+    WARNING: This will overwrite your current notes.
+    Uses SQLite's built-in backup API to safely restore.
+    """
+    console.print(
+        f"[bold red]WARNING:[/bold red] You are about to restore the database from {path}."
+    )
+    console.print(
+        "[red]This will completely overwrite your current notes and database structure.[/red]"
+    )
+
+    if typer.confirm("Are you sure you want to proceed?"):
+        try:
+            # We perform a backup before restoring, just in case?
+            # User might appreciate a safety net.
+            # But let's stick to the direct restore for now as requested.
+            restore_db(path)
+            console.print(
+                f"[green]Database restored successfully from:[/green] [bold cyan]{path}[/bold cyan]"
+            )
+        except Exception as e:
+            console.print(f"[red]Error during restore: {e}[/red]")
+            raise typer.Exit(1)
+    else:
+        console.print("Restore cancelled.")
 
 
 @app.command()
