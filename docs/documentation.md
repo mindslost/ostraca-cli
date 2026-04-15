@@ -89,7 +89,9 @@ Launch the FastMCP server. This allows AI agents to interact with your notes via
 - `search_ostraca_notes(query, category)`: Full-text search across all notes.
 - `get_ostraca_note(identifier)`: Fetch content and metadata for any note.
 - `create_ostraca_note(title, para, content, tags)`: Create a new note.
-- `edit_ostraca_note(identifier, content)`: Modify an existing note.
+- `edit_ostraca_note(identifier, content)`: Modify an existing note (replaces full content).
+- `patch_ostraca_note(identifier, old_string, new_string)`: Targeted text replacement (more efficient for large notes).
+- `append_to_ostraca_note(identifier, content)`: Append text to the end of a note.
 - `get_project_context(project_name)`: Get specific details for a project note.
 
 ## 4. Configuration

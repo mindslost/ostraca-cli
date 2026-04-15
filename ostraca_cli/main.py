@@ -759,6 +759,87 @@ def edit_ostraca_note(identifier: str, content: str) -> str:
     return f"Note '{final_title}' updated successfully."
 
 
+@mcp.tool()
+def patch_ostraca_note(identifier: str, old_string: str, new_string: str) -> str:
+    """
+    Apply a targeted text replacement to an existing note.
+
+    This is more efficient than edit_ostraca_note for large notes
+    because it only transmits the change.
+
+    Args:
+        identifier: The ID or Title of the note to patch.
+        old_string: The exact text to find and replace.
+        new_string: The text to replace it with.
+    """
+    row = get_note_by_identifier(identifier)
+    if not row:
+        return f"Error: Note '{identifier}' not found."
+
+    note_id, old_title, old_content, old_para, old_tags_str, _ = row
+
+    # Ensure old_string exists and is unique to prevent accidental multiple replacements
+    count = old_content.count(old_string)
+    if count == 0:
+        return f"Error: 'old_string' not found in note '{identifier}'."
+    if count > 1:
+        return f"Error: 'old_string' is ambiguous (found {count} occurrences) in note '{identifier}'."
+
+    new_content = old_content.replace(old_string, new_string)
+
+    # Reparse metadata in case it was changed
+    metadata, _ = extract_frontmatter(new_content)
+
+    final_title = old_title
+    final_para = old_para
+    final_tags = old_tags_str
+
+    if metadata:
+        final_title = metadata.get("title", old_title)
+        final_para = metadata.get("para", old_para)
+        if final_para not in PARA_CATEGORIES:
+            final_para = old_para
+        final_tags = ",".join(metadata.get("tags", []))
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE notes SET title = ?, content = ?, para_category = ?, "
+            "tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (final_title, new_content, final_para, final_tags, note_id),
+        )
+        conn.commit()
+
+    return f"Note '{final_title}' patched successfully."
+
+
+@mcp.tool()
+def append_to_ostraca_note(identifier: str, content: str) -> str:
+    """
+    Append content to the end of an existing note.
+
+    Args:
+        identifier: The ID or Title of the note.
+        content: The text to append to the end of the note.
+    """
+    row = get_note_by_identifier(identifier)
+    if not row:
+        return f"Error: Note '{identifier}' not found."
+
+    note_id, title, old_content, para, tags, _ = row
+    new_content = old_content.rstrip() + "\n\n" + content.strip() + "\n"
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE notes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_content, note_id),
+        )
+        conn.commit()
+
+    return f"Content appended to note '{title}'."
+
+
 @app.command()
 def mcp_start() -> None:
     """

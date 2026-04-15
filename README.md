@@ -143,7 +143,9 @@ ost mcp-start
 * `search_ostraca_notes(query: str, category: str = None)`: Search for notes using full-text search.
 * `get_ostraca_note(identifier: str)`: Retrieve the full content and metadata for any note (ID or Title).
 * `create_ostraca_note(title: str, para: str, content: str, tags: list = None)`: Create a new note with optional tags.
-* `edit_ostraca_note(identifier: str, content: str)`: Update an existing note's content and metadata.
+* `edit_ostraca_note(identifier: str, content: str)`: Update an existing note's full content.
+* `patch_ostraca_note(identifier: str, old_string: str, new_string: str)`: Targeted text replacement (highly efficient for large notes).
+* `append_to_ostraca_note(identifier: str, content: str)`: Append new text to the end of an existing note.
 * `get_project_context(project_name: str)`: Retrieve the full content for a specific project note.
 
 ### Claude Desktop Configuration
