@@ -626,6 +626,22 @@ def search_ostraca_notes(query: str, category: Optional[str] = None) -> str:
 
 
 @mcp.tool()
+def get_ostraca_note(identifier: str) -> str:
+    """
+    Retrieve the full content of any note by its ID or title.
+    """
+    row = get_note_by_identifier(identifier)
+    if not row:
+        return f"Note '{identifier}' not found."
+
+    note_id, title, content, category, tags, updated_at = row
+    return (
+        f'<context><note id="{note_id}" title="{title}" category="{category}" '
+        f'tags="{tags}" last_updated="{updated_at}">{content}</note></context>'
+    )
+
+
+@mcp.tool()
 def get_project_context(project_name: str) -> str:
     """
     Retrieve the full content of a project note by its title.
@@ -642,6 +658,105 @@ def get_project_context(project_name: str) -> str:
         f'<context><note id="{note_id}" title="{title}" category="{category}" '
         f'last_updated="{updated_at}">{content}</note></context>'
     )
+
+
+@mcp.tool()
+def create_ostraca_note(title: str, para: str, content: str, tags: Optional[List[str]] = None) -> str:
+    """
+    Create a new note in your personal knowledge base.
+
+    Args:
+        title: The title of the note.
+        para: The PARA category (Project, Area, Resource, Archive).
+        content: The Markdown content of the note. If it doesn't include YAML frontmatter,
+                 one will be automatically generated.
+        tags: Optional list of tags for the note.
+    """
+    if para not in PARA_CATEGORIES:
+        return f"Error: Category must be one of: {', '.join(PARA_CATEGORIES)}."
+
+    # Check if content already has frontmatter
+    metadata, body = extract_frontmatter(content)
+
+    if not metadata:
+        # No frontmatter found, prepend it
+        full_content = format_yaml_frontmatter(title, para, tags or []) + content
+        final_title = title
+        final_para = para
+        final_tags = ",".join(tags or [])
+    else:
+        # Frontmatter found, use it
+        full_content = content
+        final_title = metadata.get("title", title)
+        final_para = metadata.get("para", para)
+        if final_para not in PARA_CATEGORIES:
+            final_para = para
+        final_tags = ",".join(metadata.get("tags", []))
+
+    note_id = str(shortuuid.uuid())[:8]
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                cursor.execute(
+                    "INSERT INTO notes (id, title, content, para_category, tags) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (note_id, final_title, full_content,
+                     final_para, final_tags),
+                )
+                conn.commit()
+                return f"Note '{final_title}' created successfully with ID {note_id}."
+            except sqlite3.IntegrityError as e:
+                # Handle collision on short ID (extremely rare but possible)
+                if ("UNIQUE constraint failed: notes.id" in str(e)
+                        and attempt < max_retries - 1):
+                    note_id = str(shortuuid.uuid())[:8]
+                    continue
+                return f"Error saving note: {e}"
+    return "Failed to create note after multiple retries."
+
+
+@mcp.tool()
+def edit_ostraca_note(identifier: str, content: str) -> str:
+    """
+    Edit an existing note in your personal knowledge base.
+
+    Args:
+        identifier: The ID or Title of the note to edit.
+        content: The full new content of the note, including YAML frontmatter.
+                 The frontmatter will be parsed to update note metadata (title, para, tags).
+    """
+    row = get_note_by_identifier(identifier)
+    if not row:
+        return f"Error: Note '{identifier}' not found."
+
+    note_id, old_title, old_content, old_para, _, _ = row
+
+    if content == old_content:
+        return "No changes made."
+
+    metadata, _ = extract_frontmatter(content)
+    if not metadata:
+        return "Error: Invalid frontmatter format. Changes not saved. Ensure the content starts with '---' and ends with '---' for frontmatter."
+
+    final_title = metadata.get("title", old_title)
+    final_para = metadata.get("para", old_para)
+    if final_para not in PARA_CATEGORIES:
+        final_para = old_para
+
+    final_tags = ",".join(metadata.get("tags", []))
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE notes SET title = ?, content = ?, para_category = ?, "
+            "tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (final_title, content, final_para, final_tags, note_id),
+        )
+        conn.commit()
+    return f"Note '{final_title}' updated successfully."
 
 
 @app.command()
