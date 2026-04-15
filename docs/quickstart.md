@@ -68,7 +68,20 @@ Permanently remove a note (requires confirmation):
 ost delete [ID|Title]
 ```
 
-## 6. AI Integration (MCP)
+## 6. Maintenance
+
+### Backup Your Database
+Create a consistent snapshot:
+```bash
+ost backup
+```
+
+### Restore from Backup
+```bash
+ost restore /path/to/backup.db
+```
+
+## 7. AI Integration (MCP)
 
 If you use AI agents that support the Model Context Protocol (MCP), start the server:
 

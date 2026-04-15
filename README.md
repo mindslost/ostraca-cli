@@ -110,6 +110,22 @@ ost delete "Old Project"
 ```
 Removes a note by ID or Title with a confirmation prompt.
 
+### 7. Backup and Restore
+
+Create a consistent snapshot of your entire knowledge base:
+
+```bash
+ost backup
+# or specify a path
+ost backup --path ~/backups/para.db
+```
+
+To restore from a backup (WARNING: this overwrites your current database):
+
+```bash
+ost restore ~/backups/para.db
+```
+
 ---
 
 ## 🤖 MCP Integration
@@ -125,7 +141,10 @@ ost mcp-start
 ### Available Tools for AI Agents
 
 * `search_ostraca_notes(query: str, category: str = None)`: Search for notes using full-text search.
-* `get_project_context(project_name: str)`: Retrieve the full content and metadata for a specific project note.
+* `get_ostraca_note(identifier: str)`: Retrieve the full content and metadata for any note (ID or Title).
+* `create_ostraca_note(title: str, para: str, content: str, tags: list = None)`: Create a new note with optional tags.
+* `edit_ostraca_note(identifier: str, content: str)`: Update an existing note's content and metadata.
+* `get_project_context(project_name: str)`: Retrieve the full content for a specific project note.
 
 ### Claude Desktop Configuration
 

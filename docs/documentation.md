@@ -76,8 +76,21 @@ Open a note in read-only mode for viewing. Changes made in the editor session wi
 ### `ost delete [ID|TITLE]`
 Permanently remove a note. Requires user confirmation.
 
+### `ost backup`
+Create a consistent SQLite backup of your database.
+- **Options**: `--path / -p [PATH]` (Custom destination path).
+
+### `ost restore [PATH]`
+Restore your database from a backup file.
+- **Warning**: This will overwrite your current notes.
+
 ### `ost mcp-start`
-Launch the FastMCP server. This allows AI agents to interact with your notes via tools like `search_ostraca_notes` and `get_project_context`.
+Launch the FastMCP server. This allows AI agents to interact with your notes via tools:
+- `search_ostraca_notes(query, category)`: Full-text search across all notes.
+- `get_ostraca_note(identifier)`: Fetch content and metadata for any note.
+- `create_ostraca_note(title, para, content, tags)`: Create a new note.
+- `edit_ostraca_note(identifier, content)`: Modify an existing note.
+- `get_project_context(project_name)`: Get specific details for a project note.
 
 ## 4. Configuration
 
