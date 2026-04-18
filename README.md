@@ -2,7 +2,7 @@
 
 **Ostraca: Frictionless markdown for humans. High-speed context for AI.**
 
-In the ancient world, an *ostracon* was a pottery shard used as an everyday scratchpad—a frictionless way to jot down quick notes, receipts, and thoughts. 
+In the ancient world, an *ostracon* was a pottery shard used as an everyday scratchpad—a frictionless way to jot down quick notes, receipts, and thoughts.
 
 **Ostraca CLI** brings that same instant capture to your terminal. It’s a blazing-fast personal knowledge base built with Python and SQLite that natively enforces the PARA method. Whether you are writing Markdown in your favorite editor or feeding structured context to an AI agent via the built-in MCP server, Ostraca keeps your knowledge organized, searchable, and instantly accessible.
 
@@ -13,10 +13,10 @@ In the ancient world, an *ostracon* was a pottery shard used as an everyday scra
 * **PARA Method Enforcement**: Automatically organizes your workflow into four distinct categories: *Projects*, *Areas*, *Resources*, and *Archives*.
 * **Frictionless Capture**: Use your native `$EDITOR` (whether that's Doom Emacs, Neovim, or VS Code) to write notes in standard Markdown.
 * **Lightning-Fast Retrieval**: Notes are indexed in real-time using SQLite's FTS5 virtual table. Get instant full-text search across titles, content, and tags, complete with human-readable context snippets.
-* **Self-Contained Metadata**: Uses YAML frontmatter stored directly in the Markdown file, ensuring your notes remain portable, parseable, and independent. 
+* **Self-Contained Metadata**: Uses YAML frontmatter stored directly in the Markdown file, ensuring your notes remain portable, parseable, and independent.
 * **AI-Ready Architecture**:
-    * **Built-in MCP Server**: Native support for the Model Context Protocol, allowing AI agents like Claude Code to autonomously search, read, and retrieve your notes.
-    * **Machine-Readable Output**: The `search` command includes a `--raw` flag that outputs clean XML specifically formatted to maximize LLM context windows.
+  * **Built-in MCP Server**: Native support for the Model Context Protocol, allowing AI agents like Claude Code to autonomously search, read, and retrieve your notes.
+  * **Machine-Readable Output**: The `search` command includes a `--raw` flag that outputs clean XML specifically formatted to maximize LLM context windows.
 * **Visual Organization**: View your entire knowledge base in a clean, hierarchical tree format right in the terminal.
 
 ---
@@ -32,13 +32,13 @@ git clone https://github.com/your-username/ostraca.git
 cd ostraca
 ```
 
-2. Install the package in editable mode:
+1. Install the package in editable mode:
 
 ```bash
 pip install -e .
 ```
 
-3. Ensure your `$EDITOR` environment variable is set. Ostraca respects your terminal environment, whether you prefer a terminal editor or a GUI:
+1. Ensure your `$EDITOR` environment variable is set. Ostraca respects your terminal environment, whether you prefer a terminal editor or a GUI:
 
 ```bash
 export EDITOR="emacsclient -c" # or "code --wait", "nvim", "vim", etc.
@@ -63,6 +63,7 @@ Ostraca supports shell autocompletion for note IDs and Titles. To enable it, run
 ```bash
 ost add "New Feature Specs" --para Project
 ```
+
 This will open your editor with a pre-populated YAML frontmatter block, ready for you to start typing.
 
 ### 2. List Your Notes
@@ -72,6 +73,7 @@ ost list
 ost list --para Project
 ost list --tags python,security
 ```
+
 Displays a tree structure of all your notes organized by PARA category.
 
 ### 2.1 Interactive Selection TUI
@@ -89,6 +91,7 @@ ost list -i
 ```bash
 ost search "database optimization"
 ```
+
 Uses FTS5 for a high-speed search across all note titles and content, displaying highlighted context snippets.
 
 ### 4. Edit a Note
@@ -108,6 +111,7 @@ ost move "Old Project" --to Archive
 ```bash
 ost delete "Old Project"
 ```
+
 Removes a note by ID or Title with a confirmation prompt.
 
 ### 7. Backup and Restore
