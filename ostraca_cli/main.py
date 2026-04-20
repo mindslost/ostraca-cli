@@ -20,7 +20,14 @@ from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 
-from ostraca_cli.db import get_db, init_db, backup_db, restore_db, PARA_CATEGORIES
+from ostraca_cli.db import (
+    get_db,
+    init_db,
+    backup_db,
+    restore_db,
+    prune_backups,
+    PARA_CATEGORIES,
+)
 from ostraca_cli.frontmatter import extract_frontmatter
 from ostraca_cli.tui import OstracaListApp
 
@@ -237,6 +244,7 @@ def add(
                      final_para, final_tags),
                 )
                 conn.commit()
+                backup_db()
                 break
             except sqlite3.IntegrityError as e:
                 # Handle collision on short ID (extremely rare but possible)
@@ -292,6 +300,7 @@ def edit(
             (final_title, new_content, final_para, final_tags, note_id),
         )
         conn.commit()
+        backup_db()
     console.print(
         f"[green]Note '{final_title}' updated successfully.[/green]")
 
@@ -364,6 +373,7 @@ def move(
                 (new_content, to, note_id),
             )
             conn.commit()
+            backup_db()
         console.print(f"[green]Note '{title}' moved to {to}.[/green]")
     except sqlite3.Error as e:
         console.print(f"[red]Failed to move note: {e}[/red]")
@@ -374,20 +384,32 @@ def move(
 def backup(
     path: Optional[Path] = typer.Option(
         None, "--path", "-p", help="Custom destination path for the backup file"
-    )
+    ),
+    prune: bool = typer.Option(
+        False,
+        "--prune",
+        help="Remove old backups, keeping only the 20 most recent ones",
+    ),
 ) -> None:
     """
     Create a backup of the Ostraca database.
 
     Uses SQLite's built-in backup API to ensure a consistent snapshot.
-    If no path is provided, a timestamped file is created in the same
-    directory as the original database.
+    If no path is provided, a timestamped file is created in the
+    '~/ostraca-backup' directory.
     """
     try:
         backup_path = backup_db(path)
         console.print(
             f"[green]Backup created successfully at:[/green] [bold cyan]{backup_path}[/bold cyan]"
         )
+
+        if prune:
+            deleted = prune_backups(20)
+            if deleted:
+                console.print(
+                    f"[yellow]Pruned {len(deleted)} old backup(s).[/yellow]"
+                )
     except Exception as e:
         console.print(f"[red]Error creating backup: {e}[/red]")
         raise typer.Exit(1)
@@ -414,9 +436,8 @@ def restore(
 
     if typer.confirm("Are you sure you want to proceed?"):
         try:
-            # We perform a backup before restoring, just in case?
-            # User might appreciate a safety net.
-            # But let's stick to the direct restore for now as requested.
+            # We perform a backup before restoring, just in case
+            backup_db()
             restore_db(path)
             console.print(
                 f"[green]Database restored successfully from:[/green] [bold cyan]{path}[/bold cyan]"
@@ -449,6 +470,7 @@ def delete(
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM notes WHERE id = ?", (note_id,))
                 conn.commit()
+                backup_db()
             console.print(
                 f"[green]Note '{title}' deleted successfully.[/green]")
         except sqlite3.Error as e:
@@ -574,12 +596,14 @@ def list_notes(
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM notes WHERE id = ?", (data,))
                         conn.commit()
+                        backup_db()
                     console.print("[green]Note deleted successfully.[/green]")
                 except sqlite3.Error as e:
                     console.print(f"[red]Failed to delete note: {e}[/red]")
             elif action == "move":
                 note_id, target_category = data
                 move(note_id, to=target_category)
+                # move() already calls backup_db()
     else:
         results = get_filtered_notes(para, tags)
         if not results:
@@ -707,6 +731,7 @@ def create_ostraca_note(title: str, para: str, content: str, tags: Optional[List
                      final_para, final_tags),
                 )
                 conn.commit()
+                backup_db()
                 return f"Note '{final_title}' created successfully with ID {note_id}."
             except sqlite3.IntegrityError as e:
                 # Handle collision on short ID (extremely rare but possible)
@@ -756,6 +781,7 @@ def edit_ostraca_note(identifier: str, content: str) -> str:
             (final_title, content, final_para, final_tags, note_id),
         )
         conn.commit()
+        backup_db()
     return f"Note '{final_title}' updated successfully."
 
 
@@ -809,6 +835,7 @@ def patch_ostraca_note(identifier: str, old_string: str, new_string: str) -> str
             (final_title, new_content, final_para, final_tags, note_id),
         )
         conn.commit()
+        backup_db()
 
     return f"Note '{final_title}' patched successfully."
 
@@ -836,6 +863,7 @@ def append_to_ostraca_note(identifier: str, content: str) -> str:
             (new_content, note_id),
         )
         conn.commit()
+        backup_db()
 
     return f"Content appended to note '{title}'."
 

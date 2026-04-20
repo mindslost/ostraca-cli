@@ -13,6 +13,7 @@ from typing import Iterator, List, Optional
 
 # Database file is stored in the user's home directory
 DB_PATH: Path = Path.home() / ".para_notes.db"
+BACKUP_DIR: Path = Path.home() / "ostraca-backup"
 
 # Valid PARA categories enforced by both Python and SQL CHECK constraints
 PARA_CATEGORIES: List[str] = ["Project", "Area", "Resource", "Archive"]
@@ -38,14 +39,14 @@ def backup_db(target_path: Optional[Path] = None) -> Path:
     Create a backup of the SQLite database using its built-in backup API.
 
     Args:
-        target_path: Optional destination path. Defaults to DB_PATH with a timestamp.
+        target_path: Optional destination path. Defaults to BACKUP_DIR with a timestamp.
 
     Returns:
         The Path to the created backup file.
     """
     if not target_path:
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        target_path = DB_PATH.with_suffix(f".bak_{timestamp}.db")
+        target_path = BACKUP_DIR / f"para_notes_{timestamp}.db"
 
     # Ensure the directory for the target exists
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +79,39 @@ def restore_db(source_path: Path) -> None:
             source_conn.backup(dest_conn)
         finally:
             source_conn.close()
+
+
+def prune_backups(keep: int = 20) -> List[Path]:
+    """
+    Remove old backups, keeping only the 'keep' most recent ones.
+
+    Args:
+        keep: The number of recent backups to retain. Defaults to 20.
+
+    Returns:
+        A list of the Paths that were deleted.
+    """
+    if not BACKUP_DIR.exists():
+        return []
+
+    # Find all backup files and sort by modification time (newest first)
+    backups = sorted(
+        BACKUP_DIR.glob("para_notes_*.db"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    deleted = []
+    if len(backups) > keep:
+        for old_backup in backups[keep:]:
+            try:
+                old_backup.unlink()
+                deleted.append(old_backup)
+            except OSError:
+                # Silently ignore errors during deletion
+                pass
+
+    return deleted
 
 
 def init_db() -> None:
