@@ -10,6 +10,7 @@ import re
 import sqlite3
 import subprocess
 import tempfile
+import html
 from typing import List, Optional, Tuple
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from mcp.server.fastmcp import FastMCP
 from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
+from rich.markup import escape
+from rich.text import Text
 
 from ostraca_cli.db import (
     get_db,
@@ -169,7 +172,7 @@ def perform_search(query: str, category: Optional[str] = None) -> List[Tuple]:
         if category:
             sql = """
                 SELECT n.id, n.title, n.para_category, n.updated_at, n.content,
-                       snippet(notes_fts, -1, '[bold yellow]', '[/bold yellow]', '...', 20)
+                       snippet(notes_fts, -1, 'START_HL', 'END_HL', '...', 20)
                 FROM notes_fts
                 JOIN notes n ON notes_fts.rowid = n.rowid
                 WHERE notes_fts MATCH ? AND n.para_category = ?
@@ -179,7 +182,7 @@ def perform_search(query: str, category: Optional[str] = None) -> List[Tuple]:
         else:
             sql = """
                 SELECT n.id, n.title, n.para_category, n.updated_at, n.content,
-                       snippet(notes_fts, -1, '[bold yellow]', '[/bold yellow]', '...', 20)
+                       snippet(notes_fts, -1, 'START_HL', 'END_HL', '...', 20)
                 FROM notes_fts
                 JOIN notes n ON notes_fts.rowid = n.rowid
                 WHERE notes_fts MATCH ?
@@ -252,9 +255,9 @@ def add(
                         and attempt < max_retries - 1):
                     note_id = str(shortuuid.uuid())[:8]
                     continue
-                console.print(f"[red]Error saving note: {e}[/red]")
+                console.print(f"[red]Error saving note: {escape(str(e))}[/red]")
                 raise typer.Exit(1) from e
-    console.print(f"[green]Note '{final_title}' added successfully.[/green]")
+    console.print(f"[green]Note '{escape(final_title)}' added successfully.[/green]")
 
 
 @app.command()
@@ -269,7 +272,7 @@ def edit(
     """
     row = get_note_by_identifier(identifier)
     if not row:
-        console.print(f"[red]Error: Note '{identifier}' not found.[/red]")
+        console.print(f"[red]Error: Note '{escape(identifier)}' not found.[/red]")
         raise typer.Exit(1)
 
     note_id, old_title, old_content, old_para, _, _ = row
@@ -302,7 +305,7 @@ def edit(
         conn.commit()
         backup_db()
     console.print(
-        f"[green]Note '{final_title}' updated successfully.[/green]")
+        f"[green]Note '{escape(final_title)}' updated successfully.[/green]")
 
 
 @app.command(name="open")
@@ -316,14 +319,14 @@ def open_note(
     """
     row = get_note_by_identifier(identifier)
     if not row:
-        console.print(f"[red]Error: Note '{identifier}' not found.[/red]")
+        console.print(f"[red]Error: Note '{escape(identifier)}' not found.[/red]")
         raise typer.Exit(1)
 
     _, title, content, _, _, _ = row
     edit_content(content)
     console.print(
         f"[red]Opened in read-only mode.[/red] [bold red]No changes saved.[/bold red] "
-        f"To make changes run \"ost edit '{title}'\"."
+        f"To make changes run \"ost edit '{escape(title)}'\"."
     )
 
 
@@ -345,12 +348,12 @@ def move(
 
     row = get_note_by_identifier(identifier)
     if not row:
-        console.print(f"[red]Error: Note '{identifier}' not found.[/red]")
+        console.print(f"[red]Error: Note '{escape(identifier)}' not found.[/red]")
         raise typer.Exit(1)
 
     note_id, title, content, old_para, _, _ = row
     if old_para == to:
-        console.print(f"Note '{title}' is already in {to}.")
+        console.print(f"Note '{escape(title)}' is already in {escape(to)}.")
         return
 
     metadata, body = extract_frontmatter(content)
@@ -374,9 +377,9 @@ def move(
             )
             conn.commit()
             backup_db()
-        console.print(f"[green]Note '{title}' moved to {to}.[/green]")
+        console.print(f"[green]Note '{escape(title)}' moved to {escape(to)}.[/green]")
     except sqlite3.Error as e:
-        console.print(f"[red]Failed to move note: {e}[/red]")
+        console.print(f"[red]Failed to move note: {escape(str(e))}[/red]")
         raise typer.Exit(1) from e
 
 
@@ -411,7 +414,7 @@ def backup(
                     f"[yellow]Pruned {len(deleted)} old backup(s).[/yellow]"
                 )
     except Exception as e:
-        console.print(f"[red]Error creating backup: {e}[/red]")
+        console.print(f"[red]Error creating backup: {escape(str(e))}[/red]")
         raise typer.Exit(1)
 
 
@@ -428,7 +431,7 @@ def restore(
     Uses SQLite's built-in backup API to safely restore.
     """
     console.print(
-        f"[bold red]WARNING:[/bold red] You are about to restore the database from {path}."
+        f"[bold red]WARNING:[/bold red] You are about to restore the database from {escape(str(path))}."
     )
     console.print(
         "[red]This will completely overwrite your current notes and database structure.[/red]"
@@ -440,10 +443,10 @@ def restore(
             backup_db()
             restore_db(path)
             console.print(
-                f"[green]Database restored successfully from:[/green] [bold cyan]{path}[/bold cyan]"
+                f"[green]Database restored successfully from:[/green] [bold cyan]{escape(str(path))}[/bold cyan]"
             )
         except Exception as e:
-            console.print(f"[red]Error during restore: {e}[/red]")
+            console.print(f"[red]Error during restore: {escape(str(e))}[/red]")
             raise typer.Exit(1)
     else:
         console.print("Restore cancelled.")
@@ -460,7 +463,7 @@ def delete(
     """
     row = get_note_by_identifier(identifier)
     if not row:
-        console.print(f"[red]Error: Note '{identifier}' not found.[/red]")
+        console.print(f"[red]Error: Note '{escape(identifier)}' not found.[/red]")
         raise typer.Exit(1)
 
     note_id, title, _, _, _, _ = row
@@ -472,9 +475,9 @@ def delete(
                 conn.commit()
                 backup_db()
             console.print(
-                f"[green]Note '{title}' deleted successfully.[/green]")
+                f"[green]Note '{escape(title)}' deleted successfully.[/green]")
         except sqlite3.Error as e:
-            console.print(f"[red]Failed to delete note: {e}[/red]")
+            console.print(f"[red]Failed to delete note: {escape(str(e))}[/red]")
             raise typer.Exit(1) from e
     else:
         console.print("Deletion cancelled.")
@@ -505,9 +508,9 @@ def search(
         xml_output = []
         for note_id, title, category, updated_at, content, _ in results:
             xml_output.append(
-                f'<context><note id="{note_id}" title="{title}" '
-                f'category="{category}" last_updated="{updated_at}">{content}'
-                '</note></context>'
+                f'<context><note id="{html.escape(note_id)}" title="{html.escape(title)}" '
+                f'category="{html.escape(category)}" last_updated="{html.escape(str(updated_at))}">'
+                f'{html.escape(content)}</note></context>'
             )
         print("\n".join(xml_output))
     else:
@@ -519,8 +522,28 @@ def search(
         table.add_column("Last Updated", style="green")
 
         for note_id, title, category, updated_at, _, snippet in results:
-            table.add_row(note_id, title, category, (snippet or "").replace(
-                "\n", " "), str(updated_at))
+            # Build highlighted snippet using Text objects to avoid markup errors
+            snippet_text = Text()
+            curr = (snippet or "").replace("\n", " ")
+            while "START_HL" in curr:
+                pre, rest = curr.split("START_HL", 1)
+                snippet_text.append(pre)
+                if "END_HL" in rest:
+                    match, rest = rest.split("END_HL", 1)
+                    snippet_text.append(match, style="bold yellow")
+                    curr = rest
+                else:
+                    snippet_text.append(rest)
+                    curr = ""
+            snippet_text.append(curr)
+
+            table.add_row(
+                Text(note_id),
+                Text(title),
+                Text(category),
+                snippet_text,
+                Text(str(updated_at)),
+            )
         console.print(table)
 
 
@@ -620,12 +643,12 @@ def list_notes(
             if cat in categories:
                 cat_node = tree.add(f"[bold cyan]{cat}s[/bold cyan]")
                 for note_id, title, tags_str in sorted(categories[cat], key=lambda x: x[1].lower()):
-                    node_text = f"[dim white]{note_id}[/dim white] | [green]{title}[/green]"
+                    node_text = f"[dim white]{escape(note_id)}[/dim white] | [green]{escape(title)}[/green]"
                     if tags_str:
                         formatted_tags = ", ".join(
                             t.strip() for t in tags_str.split(",") if t.strip())
                         if formatted_tags:
-                            node_text += f" [dim]({formatted_tags})[/dim]"
+                            node_text += f" [dim]({escape(formatted_tags)})[/dim]"
                     cat_node.add(node_text)
         console.print(tree)
 
@@ -640,11 +663,12 @@ def search_ostraca_notes(query: str, category: Optional[str] = None) -> str:
     try:
         results = perform_search(query, category)
         out = [
-            f'<context><note id="{r[0]}" title="{r[1]}" category="{r[2]}" '
-            f'last_updated="{r[3]}">{r[4]}</note></context>'
+            f'<context><note id="{html.escape(r[0])}" title="{html.escape(r[1])}" '
+            f'category="{html.escape(r[2])}" last_updated="{html.escape(str(r[3]))}">'
+            f'{html.escape(r[4])}</note></context>'
             for r in results
         ]
-        return "\n".join(out) if out else "No notes found."
+        return "\n".join(out) if out else "No notes found matching the query."
     except sqlite3.OperationalError:
         return "<error>Malformed search query</error>"
 
@@ -660,8 +684,9 @@ def get_ostraca_note(identifier: str) -> str:
 
     note_id, title, content, category, tags, updated_at = row
     return (
-        f'<context><note id="{note_id}" title="{title}" category="{category}" '
-        f'tags="{tags}" last_updated="{updated_at}">{content}</note></context>'
+        f'<context><note id="{html.escape(note_id)}" title="{html.escape(title)}" '
+        f'category="{html.escape(category)}" tags="{html.escape(tags or "")}" '
+        f'last_updated="{html.escape(str(updated_at))}">{html.escape(content)}</note></context>'
     )
 
 
@@ -679,8 +704,9 @@ def get_project_context(project_name: str) -> str:
 
     note_id, title, content, category, _, updated_at = row
     return (
-        f'<context><note id="{note_id}" title="{title}" category="{category}" '
-        f'last_updated="{updated_at}">{content}</note></context>'
+        f'<context><note id="{html.escape(note_id)}" title="{html.escape(title)}" '
+        f'category="{html.escape(category)}" last_updated="{html.escape(str(updated_at))}">'
+        f'{html.escape(content)}</note></context>'
     )
 
 
