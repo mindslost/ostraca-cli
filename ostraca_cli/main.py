@@ -484,6 +484,52 @@ def delete(
 
 
 @app.command()
+def export(
+    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to export"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Destination path or directory (defaults to home folder)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing files"),
+) -> None:
+    """
+    Export a note to a Markdown file.
+
+    If output is a directory, the file will be named '{title}.md'.
+    If output is not provided, it defaults to the user's home directory.
+    """
+    row = get_note_by_identifier(identifier)
+    if not row:
+        console.print(f"[red]Error: Note '{escape(identifier)}' not found.[/red]")
+        raise typer.Exit(1)
+
+    _, title, content, _, _, _ = row
+    filename = re.sub(r'[\\/*?:"<>|]', "", title) + ".md"
+
+    # Determine the final output path
+    if output is None:
+        # Default to home directory
+        output_path = Path.home() / filename
+    elif output.is_dir():
+        output_path = output / filename
+    else:
+        output_path = output
+
+    if output_path.exists() and not force:
+        console.print(
+            f"[red]Error: File '{output_path}' already exists. Use --force to overwrite.[/red]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        # Ensure parent directory exists if a path was provided
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        console.print(f"[green]Note '{escape(title)}' exported to '{output_path}'.[/green]")
+    except Exception as e:
+        console.print(f"[red]Failed to export note: {escape(str(e))}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
 def search(
     query: str = typer.Argument(..., help="Search query (SQLite FTS5 syntax)"),
     para: Optional[str] = typer.Option(None, help="Filter by PARA category"),
