@@ -76,16 +76,6 @@ ost list --tags python,security
 
 Displays a tree structure of all your notes organized by PARA category.
 
-### 2.1 Interactive Selection TUI
-
-To interactively browse, open (`o`), edit (`e`), move (`m`), or delete (`d`) notes using arrow keys or Vim-style movement (`j/k`):
-
-```bash
-ost list --interactive
-# or
-ost list -i
-```
-
 ### 3. Search Your Knowledge Base
 
 ```bash

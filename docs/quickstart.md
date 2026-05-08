@@ -34,12 +34,6 @@ View your PARA tree to see how your knowledge is organized:
 ost list
 ```
 
-For an interactive experience to open, edit, or move notes, use:
-
-```bash
-ost list --interactive
-```
-
 ## 4. Search Your Knowledge
 
 Use powerful full-text search to find specific information across all notes:
@@ -51,19 +45,25 @@ ost search "launch"
 ## 5. Manage Notes
 
 ### Edit a Note
+
 Use the unique 8-character ID or the full Title:
+
 ```bash
 ost edit [ID|Title]
 ```
 
 ### Move a Note
+
 Quickly change a note's PARA category:
+
 ```bash
 ost move [ID|Title] --to Area
 ```
 
 ### Delete a Note
+
 Permanently remove a note (requires confirmation):
+
 ```bash
 ost delete [ID|Title]
 ```
@@ -71,12 +71,15 @@ ost delete [ID|Title]
 ## 6. Maintenance
 
 ### Backup Your Database
+
 Create a consistent snapshot:
+
 ```bash
 ost backup
 ```
 
 ### Restore from Backup
+
 ```bash
 ost restore /path/to/backup.db
 ```
