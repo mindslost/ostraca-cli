@@ -32,7 +32,6 @@ from ostraca_cli.db import (
     PARA_CATEGORIES,
 )
 from ostraca_cli.frontmatter import extract_frontmatter
-from ostraca_cli.tui import OstracaListApp
 
 # Initialize Typer app and FastMCP server
 app = typer.Typer(
@@ -74,13 +73,12 @@ def format_yaml_frontmatter(title: str, category: str, tags: List[str]) -> str:
     # Escape double quotes in title to prevent YAML parsing errors
     safe_title = title.replace('"', '\\"')
     tags_str = ", ".join(f'"{t}"' for t in tags)
-    return (
-        f"---\ntitle: \"{safe_title}\"\npara: {category}\n"
-        f"tags: [{tags_str}]\n---\n\n"
-    )
+    return f'---\ntitle: "{safe_title}"\npara: {category}\ntags: [{tags_str}]\n---\n\n'
 
 
-def get_note_by_identifier(identifier: str) -> Optional[Tuple[str, str, str, str, str, str]]:
+def get_note_by_identifier(
+    identifier: str,
+) -> Optional[Tuple[str, str, str, str, str, str]]:
     """
     Retrieve a note from the database by its unique 8-character ID or its Title.
 
@@ -118,7 +116,7 @@ def complete_note_identifier(incomplete: str) -> List[str]:
             # If they are typing the title, return the title wrapped in quotes if it has spaces,
             # but returning just the ID or Title works. We'll return what matches best.
             completions.append(title)
-            
+
     return completions
 
 
@@ -196,9 +194,7 @@ def perform_search(query: str, category: Optional[str] = None) -> List[Tuple]:
 @app.command()
 def add(
     title: str = typer.Argument(..., help="Title of the new note"),
-    para: str = typer.Option(
-        ..., help=f"PARA category: {', '.join(PARA_CATEGORIES)}"
-    ),
+    para: str = typer.Option(..., help=f"PARA category: {', '.join(PARA_CATEGORIES)}"),
 ) -> None:
     """
     Create a new note with a title and category.
@@ -243,16 +239,17 @@ def add(
                 cursor.execute(
                     "INSERT INTO notes (id, title, content, para_category, tags) "
                     "VALUES (?, ?, ?, ?, ?)",
-                    (note_id, final_title, edited_content,
-                     final_para, final_tags),
+                    (note_id, final_title, edited_content, final_para, final_tags),
                 )
                 conn.commit()
                 backup_db()
                 break
             except sqlite3.IntegrityError as e:
                 # Handle collision on short ID (extremely rare but possible)
-                if ("UNIQUE constraint failed: notes.id" in str(e)
-                        and attempt < max_retries - 1):
+                if (
+                    "UNIQUE constraint failed: notes.id" in str(e)
+                    and attempt < max_retries - 1
+                ):
                     note_id = str(shortuuid.uuid())[:8]
                     continue
                 console.print(f"[red]Error saving note: {escape(str(e))}[/red]")
@@ -262,7 +259,11 @@ def add(
 
 @app.command()
 def edit(
-    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to edit")
+    identifier: str = typer.Argument(
+        ...,
+        autocompletion=complete_note_identifier,
+        help="ID or Title of the note to edit",
+    ),
 ) -> None:
     """
     Edit an existing note's content and metadata.
@@ -285,7 +286,8 @@ def edit(
     metadata, _ = extract_frontmatter(new_content)
     if not metadata:
         console.print(
-            "[red]Error: Invalid frontmatter format. Changes not saved.[/red]")
+            "[red]Error: Invalid frontmatter format. Changes not saved.[/red]"
+        )
         return
 
     final_title = metadata.get("title", old_title)
@@ -304,13 +306,16 @@ def edit(
         )
         conn.commit()
         backup_db()
-    console.print(
-        f"[green]Note '{escape(final_title)}' updated successfully.[/green]")
+    console.print(f"[green]Note '{escape(final_title)}' updated successfully.[/green]")
 
 
 @app.command(name="open")
 def open_note(
-    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to open")
+    identifier: str = typer.Argument(
+        ...,
+        autocompletion=complete_note_identifier,
+        help="ID or Title of the note to open",
+    ),
 ) -> None:
     """
     Open a note in read-only mode for viewing.
@@ -332,8 +337,12 @@ def open_note(
 
 @app.command()
 def move(
-    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to move"),
-    to: str = typer.Option(..., help="Target PARA category")
+    identifier: str = typer.Argument(
+        ...,
+        autocompletion=complete_note_identifier,
+        help="ID or Title of the note to move",
+    ),
+    to: str = typer.Option(..., help="Target PARA category"),
 ) -> None:
     """
     Quickly move a note to a different PARA category.
@@ -360,12 +369,14 @@ def move(
     if not metadata:
         # Fallback to simple regex if frontmatter parsing is failing
         new_content = re.sub(
-            r"^(para:\s*).+$", rf"\g<1>{to}", content, flags=re.MULTILINE)
+            r"^(para:\s*).+$", rf"\g<1>{to}", content, flags=re.MULTILINE
+        )
     else:
         metadata["para"] = to
         tags = metadata.get("tags", [])
-        new_content = format_yaml_frontmatter(
-            metadata.get("title", title), to, tags) + body
+        new_content = (
+            format_yaml_frontmatter(metadata.get("title", title), to, tags) + body
+        )
 
     try:
         with get_db() as conn:
@@ -410,9 +421,7 @@ def backup(
         if prune:
             deleted = prune_backups(20)
             if deleted:
-                console.print(
-                    f"[yellow]Pruned {len(deleted)} old backup(s).[/yellow]"
-                )
+                console.print(f"[yellow]Pruned {len(deleted)} old backup(s).[/yellow]")
     except Exception as e:
         console.print(f"[red]Error creating backup: {escape(str(e))}[/red]")
         raise typer.Exit(1)
@@ -421,8 +430,13 @@ def backup(
 @app.command()
 def restore(
     path: Path = typer.Argument(
-        ..., exists=True, file_okay=True, dir_okay=False, readable=True, help="Path to the backup file to restore"
-    )
+        ...,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        help="Path to the backup file to restore",
+    ),
 ) -> None:
     """
     Restore the Ostraca database from a backup file.
@@ -454,7 +468,11 @@ def restore(
 
 @app.command()
 def delete(
-    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to delete")
+    identifier: str = typer.Argument(
+        ...,
+        autocompletion=complete_note_identifier,
+        help="ID or Title of the note to delete",
+    ),
 ) -> None:
     """
     Permanently delete a note.
@@ -475,7 +493,8 @@ def delete(
                 conn.commit()
                 backup_db()
             console.print(
-                f"[green]Note '{escape(title)}' deleted successfully.[/green]")
+                f"[green]Note '{escape(title)}' deleted successfully.[/green]"
+            )
         except sqlite3.Error as e:
             console.print(f"[red]Failed to delete note: {escape(str(e))}[/red]")
             raise typer.Exit(1) from e
@@ -485,8 +504,17 @@ def delete(
 
 @app.command()
 def export(
-    identifier: str = typer.Argument(..., autocompletion=complete_note_identifier, help="ID or Title of the note to export"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Destination path or directory (defaults to home folder)"),
+    identifier: str = typer.Argument(
+        ...,
+        autocompletion=complete_note_identifier,
+        help="ID or Title of the note to export",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Destination path or directory (defaults to home folder)",
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing files"),
 ) -> None:
     """
@@ -523,7 +551,9 @@ def export(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
-        console.print(f"[green]Note '{escape(title)}' exported to '{output_path}'.[/green]")
+        console.print(
+            f"[green]Note '{escape(title)}' exported to '{output_path}'.[/green]"
+        )
     except Exception as e:
         console.print(f"[red]Failed to export note: {escape(str(e))}[/red]")
         raise typer.Exit(1)
@@ -556,7 +586,7 @@ def search(
             xml_output.append(
                 f'<context><note id="{html.escape(note_id)}" title="{html.escape(title)}" '
                 f'category="{html.escape(category)}" last_updated="{html.escape(str(updated_at))}">'
-                f'{html.escape(content)}</note></context>'
+                f"{html.escape(content)}</note></context>"
             )
         print("\n".join(xml_output))
     else:
@@ -593,10 +623,7 @@ def search(
         console.print(table)
 
 
-def get_filtered_notes(
-    para: Optional[str],
-    tags: Optional[str]
-) -> List[Tuple]:
+def get_filtered_notes(para: Optional[str], tags: Optional[str]) -> List[Tuple]:
     """Fetch and filter notes based on PARA category and tags."""
     with get_db() as conn:
         cursor = conn.cursor()
@@ -611,9 +638,12 @@ def get_filtered_notes(
     if tags:
         filter_tags = [t.strip().lower() for t in tags.split(",") if t.strip()]
         results = [
-            r for r in results
-            if any(ft in [t.strip().lower() for t in (r[3] or "").split(",") if t.strip()]
-                   for ft in filter_tags)
+            r
+            for r in results
+            if any(
+                ft in [t.strip().lower() for t in (r[3] or "").split(",") if t.strip()]
+                for ft in filter_tags
+            )
         ]
     return results
 
@@ -621,11 +651,7 @@ def get_filtered_notes(
 @app.command(name="list")
 def list_notes(
     para: Optional[str] = typer.Option(None, help="Filter by PARA category"),
-    tags: Optional[str] = typer.Option(
-        None, help="Filter by comma-separated tags"),
-    interactive: bool = typer.Option(
-        False, "--interactive", "-i", help="Launch interactive selection TUI"
-    ),
+    tags: Optional[str] = typer.Option(None, help="Filter by comma-separated tags"),
 ) -> None:
     """
     List notes organized in a PARA directory tree.
@@ -639,64 +665,32 @@ def list_notes(
         )
         raise typer.Exit(1)
 
-    if interactive:
-        while True:
-            results = get_filtered_notes(para, tags)
-            if not results:
-                console.print("No notes found matching the criteria.")
-                break
+    results = get_filtered_notes(para, tags)
+    if not results:
+        console.print("No notes found matching the criteria.")
+        return
 
-            # Launch the interactive TUI
-            app_instance = OstracaListApp(results)
-            result = app_instance.run()
+    # Render static tree
+    tree = Tree("Ostraca")
+    categories = {}
+    for note_id, title, cat, tags_str in results:
+        categories.setdefault(cat, []).append((note_id, title, tags_str))
 
-            if not result:
-                break
-
-            action, data = result
-            if action == "open":
-                open_note(data)
-            elif action == "edit":
-                edit(data)
-            elif action == "delete":
-                # We bypass the standard 'delete' confirmation because the TUI already did it
-                try:
-                    with get_db() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM notes WHERE id = ?", (data,))
-                        conn.commit()
-                        backup_db()
-                    console.print("[green]Note deleted successfully.[/green]")
-                except sqlite3.Error as e:
-                    console.print(f"[red]Failed to delete note: {e}[/red]")
-            elif action == "move":
-                note_id, target_category = data
-                move(note_id, to=target_category)
-                # move() already calls backup_db()
-    else:
-        results = get_filtered_notes(para, tags)
-        if not results:
-            console.print("No notes found matching the criteria.")
-            return
-
-        # Render static tree
-        tree = Tree("Ostraca")
-        categories = {}
-        for note_id, title, cat, tags_str in results:
-            categories.setdefault(cat, []).append((note_id, title, tags_str))
-
-        for cat in PARA_CATEGORIES:
-            if cat in categories:
-                cat_node = tree.add(f"[bold cyan]{cat}s[/bold cyan]")
-                for note_id, title, tags_str in sorted(categories[cat], key=lambda x: x[1].lower()):
-                    node_text = f"[dim white]{escape(note_id)}[/dim white] | [green]{escape(title)}[/green]"
-                    if tags_str:
-                        formatted_tags = ", ".join(
-                            t.strip() for t in tags_str.split(",") if t.strip())
-                        if formatted_tags:
-                            node_text += f" [dim]({escape(formatted_tags)})[/dim]"
-                    cat_node.add(node_text)
-        console.print(tree)
+    for cat in PARA_CATEGORIES:
+        if cat in categories:
+            cat_node = tree.add(f"[bold cyan]{cat}s[/bold cyan]")
+            for note_id, title, tags_str in sorted(
+                categories[cat], key=lambda x: x[1].lower()
+            ):
+                node_text = f"[dim white]{escape(note_id)}[/dim white] | [green]{escape(title)}[/green]"
+                if tags_str:
+                    formatted_tags = ", ".join(
+                        t.strip() for t in tags_str.split(",") if t.strip()
+                    )
+                    if formatted_tags:
+                        node_text += f" [dim]({escape(formatted_tags)})[/dim]"
+                cat_node.add(node_text)
+    console.print(tree)
 
 
 @mcp.tool()
@@ -711,7 +705,7 @@ def search_ostraca_notes(query: str, category: Optional[str] = None) -> str:
         out = [
             f'<context><note id="{html.escape(r[0])}" title="{html.escape(r[1])}" '
             f'category="{html.escape(r[2])}" last_updated="{html.escape(str(r[3]))}">'
-            f'{html.escape(r[4])}</note></context>'
+            f"{html.escape(r[4])}</note></context>"
             for r in results
         ]
         return "\n".join(out) if out else "No notes found matching the query."
@@ -745,19 +739,21 @@ def get_project_context(project_name: str) -> str:
     """
     row = get_note_by_identifier(project_name)
     # Ensure it's actually in the 'Project' category
-    if not row or row[3] != 'Project':
+    if not row or row[3] != "Project":
         return f"Project '{project_name}' not found."
 
     note_id, title, content, category, _, updated_at = row
     return (
         f'<context><note id="{html.escape(note_id)}" title="{html.escape(title)}" '
         f'category="{html.escape(category)}" last_updated="{html.escape(str(updated_at))}">'
-        f'{html.escape(content)}</note></context>'
+        f"{html.escape(content)}</note></context>"
     )
 
 
 @mcp.tool()
-def create_ostraca_note(title: str, para: str, content: str, tags: Optional[List[str]] = None) -> str:
+def create_ostraca_note(
+    title: str, para: str, content: str, tags: Optional[List[str]] = None
+) -> str:
     """
     Create a new note in your personal knowledge base.
 
@@ -799,16 +795,17 @@ def create_ostraca_note(title: str, para: str, content: str, tags: Optional[List
                 cursor.execute(
                     "INSERT INTO notes (id, title, content, para_category, tags) "
                     "VALUES (?, ?, ?, ?, ?)",
-                    (note_id, final_title, full_content,
-                     final_para, final_tags),
+                    (note_id, final_title, full_content, final_para, final_tags),
                 )
                 conn.commit()
                 backup_db()
                 return f"Note '{final_title}' created successfully with ID {note_id}."
             except sqlite3.IntegrityError as e:
                 # Handle collision on short ID (extremely rare but possible)
-                if ("UNIQUE constraint failed: notes.id" in str(e)
-                        and attempt < max_retries - 1):
+                if (
+                    "UNIQUE constraint failed: notes.id" in str(e)
+                    and attempt < max_retries - 1
+                ):
                     note_id = str(shortuuid.uuid())[:8]
                     continue
                 return f"Error saving note: {e}"

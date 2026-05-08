@@ -9,7 +9,7 @@ import sqlite3
 import time
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Iterator, List, Optional
+from typing import Generator, List, Optional
 
 # Database file is stored in the user's home directory
 DB_PATH: Path = Path.home() / ".para_notes.db"
@@ -20,7 +20,7 @@ PARA_CATEGORIES: List[str] = ["Project", "Area", "Resource", "Archive"]
 
 
 @contextmanager
-def get_db() -> Iterator[sqlite3.Connection]:
+def get_db() -> Generator[sqlite3.Connection]:
     """
     Provide a transactional scope around a series of database operations.
 
