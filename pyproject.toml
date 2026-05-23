@@ -11,6 +11,9 @@ requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
 dependencies = ["typer[all]", "rich", "mcp", "shortuuid"]
 
+[project.optional-dependencies]
+test = ["pytest"]
+
 [tool.setuptools]
 packages = ["ostraca_cli"]
 

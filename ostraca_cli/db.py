@@ -125,6 +125,10 @@ def init_db() -> None:
     with get_db() as conn:
         cursor = conn.cursor()
 
+        # Enable WAL mode and synchronous NORMAL for performance
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+
         # 1. Core Table: Stores the source of truth for all notes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS notes (
@@ -137,6 +141,9 @@ def init_db() -> None:
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Index the 'title' column to optimize ID/Title note lookups (avoiding table scans)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_title ON notes (title)")
 
         # 2. Search Index (FTS5): External content table for high-performance searching
         cursor.execute("""

@@ -6,6 +6,7 @@ MCP (Model Context Protocol) tools for AI agents to interact with the notes.
 """
 
 import os
+import shlex
 import re
 import sqlite3
 import subprocess
@@ -101,11 +102,20 @@ def get_note_by_identifier(
 
 def complete_note_identifier(incomplete: str) -> List[str]:
     """Autocompletion function for note IDs and titles."""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        # Fetch all IDs and titles to filter in Python for simplicity and flexibility
-        cursor.execute("SELECT id, title FROM notes")
-        results = cursor.fetchall()
+    if not incomplete:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, title FROM notes LIMIT 100")
+            results = cursor.fetchall()
+    else:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            # Fetch matching IDs or Titles directly using SQL LIKE
+            cursor.execute(
+                "SELECT id, title FROM notes WHERE id LIKE ? OR LOWER(title) LIKE ?",
+                (f"{incomplete}%", f"%{incomplete.lower()}%"),
+            )
+            results = cursor.fetchall()
 
     completions = []
     incomplete_lower = incomplete.lower()
@@ -139,9 +149,10 @@ def edit_content(content: str) -> str:
             f.write(content)
 
         editor = get_editor()
+        editor_args = shlex.split(editor) if editor else ["vim"]
         try:
             # Run the editor; check=False because we handle exit codes if needed later
-            subprocess.run([editor, tmp_path], check=False)
+            subprocess.run([*editor_args, tmp_path], check=False)
         except FileNotFoundError as exc:
             console.print(f"[red]Error: Editor '{editor}' not found.[/red]")
             raise typer.Exit(1) from exc
@@ -242,7 +253,6 @@ def add(
                     (note_id, final_title, edited_content, final_para, final_tags),
                 )
                 conn.commit()
-                backup_db()
                 break
             except sqlite3.IntegrityError as e:
                 # Handle collision on short ID (extremely rare but possible)
@@ -305,7 +315,6 @@ def edit(
             (final_title, new_content, final_para, final_tags, note_id),
         )
         conn.commit()
-        backup_db()
     console.print(f"[green]Note '{escape(final_title)}' updated successfully.[/green]")
 
 
@@ -387,7 +396,6 @@ def move(
                 (new_content, to, note_id),
             )
             conn.commit()
-            backup_db()
         console.print(f"[green]Note '{escape(title)}' moved to {escape(to)}.[/green]")
     except sqlite3.Error as e:
         console.print(f"[red]Failed to move note: {escape(str(e))}[/red]")
@@ -491,7 +499,6 @@ def delete(
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM notes WHERE id = ?", (note_id,))
                 conn.commit()
-                backup_db()
             console.print(
                 f"[green]Note '{escape(title)}' deleted successfully.[/green]"
             )
@@ -625,27 +632,30 @@ def search(
 
 def get_filtered_notes(para: Optional[str], tags: Optional[str]) -> List[Tuple]:
     """Fetch and filter notes based on PARA category and tags."""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        query_sql = "SELECT id, title, para_category, tags FROM notes"
-        params = ()
-        if para:
-            query_sql += " WHERE para_category = ?"
-            params = (para,)
-        cursor.execute(query_sql, params)
-        results = cursor.fetchall()
+    conditions = []
+    params = []
+
+    if para:
+        conditions.append("para_category = ?")
+        params.append(para)
 
     if tags:
         filter_tags = [t.strip().lower() for t in tags.split(",") if t.strip()]
-        results = [
-            r
-            for r in results
-            if any(
-                ft in [t.strip().lower() for t in (r[3] or "").split(",") if t.strip()]
-                for ft in filter_tags
-            )
-        ]
-    return results
+        if filter_tags:
+            sql_parts = []
+            for t in filter_tags:
+                sql_parts.append("LOWER(',' || tags || ',') LIKE ?")
+                params.append(f"%,{t},%")
+            conditions.append(f"({ ' OR '.join(sql_parts) })")
+
+    query_sql = "SELECT id, title, para_category, tags FROM notes"
+    if conditions:
+        query_sql += " WHERE " + " AND ".join(conditions)
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query_sql, params)
+        return cursor.fetchall()
 
 
 @app.command(name="list")
@@ -798,7 +808,6 @@ def create_ostraca_note(
                     (note_id, final_title, full_content, final_para, final_tags),
                 )
                 conn.commit()
-                backup_db()
                 return f"Note '{final_title}' created successfully with ID {note_id}."
             except sqlite3.IntegrityError as e:
                 # Handle collision on short ID (extremely rare but possible)
@@ -850,7 +859,6 @@ def edit_ostraca_note(identifier: str, content: str) -> str:
             (final_title, content, final_para, final_tags, note_id),
         )
         conn.commit()
-        backup_db()
     return f"Note '{final_title}' updated successfully."
 
 
@@ -904,7 +912,6 @@ def patch_ostraca_note(identifier: str, old_string: str, new_string: str) -> str
             (final_title, new_content, final_para, final_tags, note_id),
         )
         conn.commit()
-        backup_db()
 
     return f"Note '{final_title}' patched successfully."
 
@@ -932,7 +939,6 @@ def append_to_ostraca_note(identifier: str, content: str) -> str:
             (new_content, note_id),
         )
         conn.commit()
-        backup_db()
 
     return f"Content appended to note '{title}'."
 
