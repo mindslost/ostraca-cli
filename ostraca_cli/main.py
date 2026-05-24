@@ -1631,9 +1631,9 @@ def todo_check_reminders(
         console.print(f"[green]Sent {len(notified_ids)} task reminder notification(s).[/green]")
 
 
-@todo_app.command(name="setup-systemd")
-def todo_setup_systemd() -> None:
-    """Print instructions and generate systemd service and timer files for user reminders."""
+@todo_app.command(name="setup-reminders")
+def todo_setup_reminders() -> None:
+    """Print instructions and generate system reminder service files (Systemd on Linux, Launchd on macOS)."""
     import sys
     
     ost_path = shutil.which("ost")
@@ -1642,7 +1642,53 @@ def todo_setup_systemd() -> None:
         if not ost_path.exists():
             ost_path = "ost"
             
-    service_content = f"""[Unit]
+    # macOS Launchd Configuration
+    if sys.platform == "darwin":
+        plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ostraca.reminders</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{ost_path}</string>
+        <string>todo</string>
+        <string>check-reminders</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+"""
+        launch_agents_dir = Path.home() / "Library" / "LaunchAgents"
+        plist_file = launch_agents_dir / "com.ostraca.reminders.plist"
+        
+        console.print("[bold magenta]macOS Launchd Configuration Setup[/bold magenta]")
+        console.print(f"Detected `ost` executable at: [cyan]{ost_path}[/cyan]")
+        console.print(f"User LaunchAgents directory: [cyan]{launch_agents_dir}[/cyan]\n")
+
+        if typer.confirm("Would you like to write the LaunchAgent plist file automatically?"):
+            try:
+                launch_agents_dir.mkdir(parents=True, exist_ok=True)
+                with open(plist_file, "w") as f:
+                    f.write(plist_content)
+                console.print(f"[green]✓ Wrote {plist_file}[/green]")
+                console.print("\n[bold green]To load and start the reminder service timer, run the following commands:[/bold green]")
+                console.print(f"  [bold cyan]launchctl bootstrap gui/$(id -u) {plist_file}[/bold cyan]")
+                console.print("\n[bold green]To unload/stop the reminder timer:[/bold green]")
+                console.print(f"  [bold cyan]launchctl bootout gui/$(id -u) {plist_file}[/bold cyan]")
+            except Exception as e:
+                console.print(f"[red]Error writing launchd file: {e}[/red]")
+        else:
+            console.print("\n[bold]You can manually create the following file under `~/Library/LaunchAgents/`:[/bold]")
+            console.print(f"\n[bold cyan]com.ostraca.reminders.plist[/bold cyan]\n[dim]{plist_content}[/dim]")
+
+    # Linux Systemd Configuration
+    else:
+        service_content = f"""[Unit]
 Description=Ostraca CLI Todo Reminders Service
 After=network.target
 
@@ -1651,7 +1697,7 @@ Type=oneshot
 ExecStart={ost_path} todo check-reminders
 """
 
-    timer_content = """[Unit]
+        timer_content = """[Unit]
 Description=Ostraca CLI Todo Reminders Timer
 
 [Timer]
@@ -1663,39 +1709,45 @@ Unit=ostraca-reminders.service
 WantedBy=timers.target
 """
 
-    user_systemd_dir = Path.home() / ".config" / "systemd" / "user"
-    
-    console.print("[bold magenta]Systemd Configuration Setup[/bold magenta]")
-    console.print(f"Detected `ost` executable at: [cyan]{ost_path}[/cyan]")
-    console.print(f"User systemd directory: [cyan]{user_systemd_dir}[/cyan]\n")
+        user_systemd_dir = Path.home() / ".config" / "systemd" / "user"
+        
+        console.print("[bold magenta]Systemd Configuration Setup[/bold magenta]")
+        console.print(f"Detected `ost` executable at: [cyan]{ost_path}[/cyan]")
+        console.print(f"User systemd directory: [cyan]{user_systemd_dir}[/cyan]\n")
 
-    if typer.confirm("Would you like to write the service and timer files automatically?"):
-        try:
-            user_systemd_dir.mkdir(parents=True, exist_ok=True)
-            
-            service_file = user_systemd_dir / "ostraca-reminders.service"
-            timer_file = user_systemd_dir / "ostraca-reminders.timer"
-            
-            with open(service_file, "w") as f:
-                f.write(service_content)
-            with open(timer_file, "w") as f:
-                f.write(timer_content)
+        if typer.confirm("Would you like to write the service and timer files automatically?"):
+            try:
+                user_systemd_dir.mkdir(parents=True, exist_ok=True)
                 
-            console.print(f"[green]✓ Wrote {service_file}[/green]")
-            console.print(f"[green]✓ Wrote {timer_file}[/green]")
-            
-            console.print("\n[bold green]To enable and start the reminder service timer, run the following commands:[/bold green]")
-            console.print("  [bold cyan]systemctl --user daemon-reload[/bold cyan]")
-            console.print("  [bold cyan]systemctl --user enable --now ostraca-reminders.timer[/bold cyan]")
-            console.print("\n[bold green]To check the status of your timer:[/bold green]")
-            console.print("  [bold cyan]systemctl --user status ostraca-reminders.timer[/bold cyan]")
-            console.print("  [bold cyan]journalctl --user -u ostraca-reminders.service[/bold cyan]")
-        except Exception as e:
-            console.print(f"[red]Error writing systemd files: {e}[/red]")
-    else:
-        console.print("\n[bold]You can manually create the following files under `~/.config/systemd/user/`:[/bold]")
-        console.print(f"\n[bold cyan]1. ostraca-reminders.service[/bold cyan]\n[dim]{service_content}[/dim]")
-        console.print(f"\n[bold cyan]2. ostraca-reminders.timer[/bold cyan]\n[dim]{timer_content}[/dim]")
+                service_file = user_systemd_dir / "ostraca-reminders.service"
+                timer_file = user_systemd_dir / "ostraca-reminders.timer"
+                
+                with open(service_file, "w") as f:
+                    f.write(service_content)
+                with open(timer_file, "w") as f:
+                    f.write(timer_content)
+                    
+                console.print(f"[green]✓ Wrote {service_file}[/green]")
+                console.print(f"[green]✓ Wrote {timer_file}[/green]")
+                
+                console.print("\n[bold green]To enable and start the reminder service timer, run the following commands:[/bold green]")
+                console.print("  [bold cyan]systemctl --user daemon-reload[/bold cyan]")
+                console.print("  [bold cyan]systemctl --user enable --now ostraca-reminders.timer[/bold cyan]")
+                console.print("\n[bold green]To check the status of your timer:[/bold green]")
+                console.print("  [bold cyan]systemctl --user status ostraca-reminders.timer[/bold cyan]")
+                console.print("  [bold cyan]journalctl --user -u ostraca-reminders.service[/bold cyan]")
+            except Exception as e:
+                console.print(f"[red]Error writing systemd files: {e}[/red]")
+        else:
+            console.print("\n[bold]You can manually create the following files under `~/.config/systemd/user/`:[/bold]")
+            console.print(f"\n[bold cyan]1. ostraca-reminders.service[/bold cyan]\n[dim]{service_content}[/dim]")
+            console.print(f"\n[bold cyan]2. ostraca-reminders.timer[/bold cyan]\n[dim]{timer_content}[/dim]")
+
+
+@todo_app.command(name="setup-systemd", deprecated=True)
+def todo_setup_systemd() -> None:
+    """Legacy command alias for setup-reminders."""
+    todo_setup_reminders()
 
 
 # ─── TODO MCP INTEGRATIONS ───────────────────────────────────────────────────
