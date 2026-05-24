@@ -91,3 +91,72 @@ If you use AI agents that support the Model Context Protocol (MCP), start the se
 ```bash
 ost mcp-start
 ```
+
+## 8. Todo and Reminder Management
+
+Ostraca CLI includes a comprehensive todo and reminder subsystem to track your tasks alongside your notes.
+
+### Add a Task
+
+Create tasks with descriptions, priority levels, and due dates:
+
+```bash
+# Add a task due tomorrow with high priority
+ost todo add "Draft release notes" "Focus on the new todo feature" --due tomorrow --priority high
+
+# Add a task with a relative deadline in 3 days
+ost todo add "Database review" --due +3d --priority medium
+```
+
+### List Tasks
+
+View a table of your active tasks sorted by due date and priority:
+
+```bash
+# List all active tasks
+ost todo list
+
+# Filter tasks by status and priority (including completed tasks)
+ost todo list --status in_progress --priority high --all
+```
+
+### Complete and Manage Status
+
+Update task status or complete tasks directly:
+
+```bash
+# Mark a task as completed (by ID or Title)
+ost todo complete [ID|Title]
+
+# Manually transition task status
+ost todo status [ID|Title] in_progress
+```
+
+### View Calendar
+
+Get a visual summary of scheduled tasks in day, week, or month views:
+
+```bash
+# View the current month calendar
+ost todo calendar
+
+# View the agenda for a specific day
+ost todo calendar --view day --date 05-25-2026
+```
+
+### Desktop Alerts & Reminders
+
+You can trigger on-demand desktop alerts for upcoming tasks:
+
+```bash
+# Check for tasks due within the next 15 minutes
+ost todo check-reminders
+```
+
+To configure automatic notifications to run in the background (runs every 5 minutes):
+
+```bash
+ost todo setup-reminders
+```
+Follow the interactive prompt to install the system daemon config files (`launchd` on macOS or `systemd` on Linux).
+

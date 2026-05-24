@@ -104,7 +104,36 @@ ost delete "Old Project"
 
 Removes a note by ID or Title with a confirmation prompt.
 
-### 7. Backup and Restore
+### 7. Export a Note
+
+Export a note's full content to a Markdown file:
+
+```bash
+ost export "New Feature Specs" --output ~/Documents/
+```
+
+### 8. Manage Todos and Reminders
+
+Create and monitor tasks right inside your terminal:
+
+```bash
+# Add a high-priority todo due tomorrow
+ost todo add "Fix styling bugs" --due tomorrow --priority high
+
+# List current active tasks
+ost todo list
+
+# View task calendar
+ost todo calendar
+
+# Mark a task completed
+ost todo complete [ID|Title]
+
+# Enable background alerts/reminders
+ost todo setup-reminders
+```
+
+### 9. Backup and Restore
 
 Create a consistent snapshot of your entire knowledge base:
 
@@ -141,6 +170,11 @@ ost mcp-start
 * `patch_ostraca_note(identifier: str, old_string: str, new_string: str)`: Targeted text replacement (highly efficient for large notes).
 * `append_to_ostraca_note(identifier: str, content: str)`: Append new text to the end of an existing note.
 * `get_project_context(project_name: str)`: Retrieve the full content for a specific project note.
+* `list_ostraca_todos(status: str = None, priority: str = None, all_items: bool = False)`: Retrieve active or completed tasks.
+* `create_ostraca_todo(title: str, description: str = None, due: str = None, priority: str = 'medium')`: Create a new todo task.
+* `complete_ostraca_todo(identifier: str)`: Mark a todo task as completed.
+* `update_ostraca_todo(identifier: str, title: str = None, description: str = None, due: str = None, priority: str = None, status: str = None)`: Update attributes of an existing todo task.
+* `delete_ostraca_todo(identifier: str)`: Permanently delete a todo task.
 
 ### Claude Desktop Configuration
 

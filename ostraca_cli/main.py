@@ -1772,8 +1772,8 @@ def list_ostraca_todos(
     if status:
         if status not in ("todo", "in_progress", "done"):
             return "Error: Status filter must be 'todo', 'in_progress', or 'done'."
-            conditions.append("status = ?")
-            params.append(status)
+        conditions.append("status = ?")
+        params.append(status)
     elif not all_items:
         conditions.append("status != 'done'")
 
@@ -1867,6 +1867,92 @@ def complete_ostraca_todo(identifier: str) -> str:
         conn.commit()
 
     return f"Task '{title}' ({todo_id}) marked as completed."
+
+
+@mcp.tool()
+def update_ostraca_todo(
+    identifier: str,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    due: Optional[str] = None,
+    priority: Optional[str] = None,
+    status: Optional[str] = None,
+) -> str:
+    """
+    Update attributes of an existing todo task in your personal knowledge base.
+
+    Args:
+        identifier: The ID or Title of the task to update.
+        title: New title for the task.
+        description: New description for the task.
+        due: New due date (e.g. 'MM-DD-YYYY HH:MM', 'today', 'tomorrow', '+3d'). Pass empty string "" to clear.
+        priority: New priority ('low', 'medium', 'high').
+        status: New status ('todo', 'in_progress', 'done').
+    """
+    row = get_todo_by_identifier(identifier)
+    if not row:
+        return f"Error: Task '{identifier}' not found."
+
+    todo_id, old_title, old_desc, old_status, old_prio, old_due, old_reminder = row
+
+    new_title = title if title is not None else old_title
+    new_desc = description if description is not None else old_desc
+    new_prio = priority if priority is not None else old_prio
+    new_status = status if status is not None else old_status
+
+    if new_prio not in ("low", "medium", "high"):
+        return "Error: Priority must be 'low', 'medium', or 'high'."
+
+    if new_status not in ("todo", "in_progress", "done"):
+        return "Error: Status must be 'todo', 'in_progress', or 'done'."
+
+    if due is not None:
+        if due.strip() == "":
+            new_due = None
+        else:
+            try:
+                new_due = parse_due_date(due)
+            except ValueError as e:
+                return f"Error: {e}"
+    else:
+        new_due = old_due
+
+    # Reset reminder_sent if due date changes, or if status goes back to todo/in_progress from done
+    reset_reminder = old_reminder
+    if new_due != old_due:
+        reset_reminder = 0
+    if new_status != old_status:
+        reset_reminder = 0 if new_status != "done" else 1
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE todos SET title = ?, description = ?, due_date = ?, priority = ?, "
+            "status = ?, reminder_sent = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_title, new_desc, new_due, new_prio, new_status, reset_reminder, todo_id),
+        )
+        conn.commit()
+
+    return f"Task '{new_title}' ({todo_id}) updated successfully."
+
+
+@mcp.tool()
+def delete_ostraca_todo(identifier: str) -> str:
+    """
+    Permanently delete a todo task by its ID or Title.
+    """
+    row = get_todo_by_identifier(identifier)
+    if not row:
+        return f"Error: Task '{identifier}' not found."
+
+    todo_id, title, _, _, _, _, _ = row
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+        conn.commit()
+
+    return f"Task '{title}' ({todo_id}) deleted successfully."
 
 
 if __name__ == "__main__":

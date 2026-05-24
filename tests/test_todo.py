@@ -169,7 +169,7 @@ def test_todo_mcp_tools():
     assert "created successfully" in res
     assert "ID" in res
 
-    # Test list_ostraca_todos
+    # Test list_ostraca_todos with priority filter
     todo_list_out = main.list_ostraca_todos(priority="high")
     assert "MCP Task" in todo_list_out
     assert "high" in todo_list_out
@@ -180,6 +180,26 @@ def test_todo_mcp_tools():
         cursor.execute("SELECT id FROM todos WHERE title = 'MCP Task'")
         tid = cursor.fetchone()[0]
 
+    # Test list_ostraca_todos with status filter (verifying the status filtering fix)
+    todo_list_todo = main.list_ostraca_todos(status="todo")
+    assert tid in todo_list_todo
+
+    todo_list_done = main.list_ostraca_todos(status="done")
+    assert "No tasks found matching" in todo_list_done or tid not in todo_list_done
+
+    # Test update_ostraca_todo
+    res_upd = main.update_ostraca_todo(tid, title="Updated MCP Task", priority="low", status="in_progress")
+    assert "updated successfully" in res_upd
+
+    # Verify update in DB
+    with db.get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT title, priority, status FROM todos WHERE id = ?", (tid,))
+        row = cursor.fetchone()
+        assert row[0] == "Updated MCP Task"
+        assert row[1] == "low"
+        assert row[2] == "in_progress"
+
     # Test complete_ostraca_todo
     res_comp = main.complete_ostraca_todo(tid)
     assert "marked as completed" in res_comp
@@ -189,6 +209,16 @@ def test_todo_mcp_tools():
         cursor = conn.cursor()
         cursor.execute("SELECT status FROM todos WHERE id = ?", (tid,))
         assert cursor.fetchone()[0] == "done"
+
+    # Test delete_ostraca_todo
+    res_del = main.delete_ostraca_todo(tid)
+    assert "deleted successfully" in res_del
+
+    # Verify deletion in DB
+    with db.get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM todos WHERE id = ?", (tid,))
+        assert cursor.fetchone()[0] == 0
 
 
 def test_send_notification(monkeypatch):
