@@ -12,6 +12,9 @@ import sqlite3
 import subprocess
 import tempfile
 import html
+import datetime
+import calendar
+import shutil
 from typing import List, Optional, Tuple
 from pathlib import Path
 
@@ -23,6 +26,7 @@ from rich.table import Table
 from rich.tree import Tree
 from rich.markup import escape
 from rich.text import Text
+from rich import box
 
 from ostraca_cli.db import (
     get_db,
@@ -39,6 +43,8 @@ app = typer.Typer(
     help="Ostraca CLI - A terminal-based personal knowledge base enforcing the PARA method.",
     add_completion=True,
 )
+todo_app = typer.Typer(help="Manage todo items and scheduling.")
+app.add_typer(todo_app, name="todo")
 mcp = FastMCP("Ostraca")
 console = Console()
 
@@ -951,6 +957,848 @@ def mcp_start() -> None:
     Uses standard input/output (stdio) for communication.
     """
     mcp.run(transport="stdio")
+
+
+# ─── TODO LIST FLOW IMPLEMENTATION ───────────────────────────────────────────
+
+def parse_due_date(date_str: Optional[str]) -> Optional[str]:
+    """
+    Parse a due date string.
+    Supported formats:
+    - MM-DD-YYYY HH:MM
+    - MM-DD-YYYY
+    - "today" -> YYYY-MM-DD 23:59
+    - "tomorrow" -> YYYY-MM-DD 23:59
+    - "+Nd" (e.g. +3d) -> N days from now, YYYY-MM-DD 23:59
+    - "+Nw" (e.g. +1w) -> N weeks from now, YYYY-MM-DD 23:59
+    
+    Returns:
+        Formatted datetime string `YYYY-MM-DD HH:MM` or None if date_str is None.
+    """
+    if not date_str:
+        return None
+
+    date_str = date_str.strip().lower()
+    now = datetime.datetime.now()
+
+    if date_str == "today":
+        target = now.replace(hour=23, minute=59, second=0, microsecond=0)
+        return target.strftime("%Y-%m-%d %H:%M")
+    elif date_str == "tomorrow":
+        target = (now + datetime.timedelta(days=1)).replace(hour=23, minute=59, second=0, microsecond=0)
+        return target.strftime("%Y-%m-%d %H:%M")
+
+    match_relative = re.match(r"^\+(\d+)([dw])$", date_str)
+    if match_relative:
+        val = int(match_relative.group(1))
+        unit = match_relative.group(2)
+        if unit == "d":
+            target = (now + datetime.timedelta(days=val)).replace(hour=23, minute=59, second=0, microsecond=0)
+        else: # 'w'
+            target = (now + datetime.timedelta(weeks=val)).replace(hour=23, minute=59, second=0, microsecond=0)
+        return target.strftime("%Y-%m-%d %H:%M")
+
+    # Explicit format: MM-DD-YYYY HH:MM
+    try:
+        dt = datetime.datetime.strptime(date_str, "%m-%d-%Y %H:%M")
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        pass
+
+    # Explicit format: MM-DD-YYYY
+    try:
+        dt = datetime.datetime.strptime(date_str, "%m-%d-%Y")
+        dt = dt.replace(hour=23, minute=59, second=0, microsecond=0)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        pass
+
+    raise ValueError(
+        "Invalid date format. Expected: MM-DD-YYYY HH:MM, MM-DD-YYYY, 'today', 'tomorrow', or '+Nd'/'+Nw' (e.g., '+3d')."
+    )
+
+
+def complete_todo_identifier(incomplete: str) -> List[str]:
+    """Autocompletion function for todo IDs and titles."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if not incomplete:
+            cursor.execute("SELECT id, title FROM todos LIMIT 100")
+        else:
+            cursor.execute(
+                "SELECT id, title FROM todos WHERE id LIKE ? OR LOWER(title) LIKE ?",
+                (f"{incomplete}%", f"%{incomplete.lower()}%"),
+            )
+        results = cursor.fetchall()
+
+    completions = []
+    incomplete_lower = incomplete.lower()
+    for todo_id, title in results:
+        if todo_id.lower().startswith(incomplete_lower):
+            completions.append(todo_id)
+        elif incomplete_lower in title.lower():
+            completions.append(title)
+    return completions
+
+
+def get_todo_by_identifier(identifier: str) -> Optional[Tuple]:
+    """Retrieve a todo from the database by its ID or Title."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, title, description, status, priority, due_date, reminder_sent FROM todos "
+            "WHERE id = ? OR title = ?",
+            (identifier, identifier),
+        )
+        return cursor.fetchone()
+
+
+@todo_app.command(name="add")
+def todo_add(
+    title: str = typer.Argument(..., help="Title of the new task"),
+    description: Optional[str] = typer.Argument(None, help="Optional description of the task"),
+    due: Optional[str] = typer.Option(None, "--due", "-d", help="Due date: MM-DD-YYYY HH:MM, MM-DD-YYYY, today, tomorrow, or +Nd/+Nw"),
+    priority: str = typer.Option("medium", "--priority", "-p", help="Priority: low, medium, high"),
+) -> None:
+    """Add a new task to your todo list."""
+    if priority not in ("low", "medium", "high"):
+        console.print("[red]Error: Priority must be 'low', 'medium', or 'high'.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        parsed_due = parse_due_date(due)
+    except ValueError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    todo_id = str(shortuuid.uuid())[:8]
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO todos (id, title, description, status, priority, due_date, reminder_sent) "
+                "VALUES (?, ?, ?, 'todo', ?, ?, 0)",
+                (todo_id, title, description, priority, parsed_due),
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            console.print(f"[red]Database error: {e}[/red]")
+            raise typer.Exit(1)
+
+    console.print(f"[green]Task added successfully with ID [bold]{todo_id}[/bold].[/green]")
+
+
+@todo_app.command(name="edit")
+def todo_edit(
+    identifier: str = typer.Argument(..., autocompletion=complete_todo_identifier, help="ID or Title of the task to edit"),
+    title: Optional[str] = typer.Option(None, "--title", "-t", help="New title"),
+    description: Optional[str] = typer.Option(None, "--desc", "-d", help="New description"),
+    due: Optional[str] = typer.Option(None, "--due", help="New due date: MM-DD-YYYY HH:MM, MM-DD-YYYY, today, tomorrow, or +Nd/+Nw"),
+    priority: Optional[str] = typer.Option(None, "--priority", "-p", help="New priority: low, medium, high"),
+) -> None:
+    """Edit an existing task."""
+    row = get_todo_by_identifier(identifier)
+    if not row:
+        console.print(f"[red]Error: Task '{identifier}' not found.[/red]")
+        raise typer.Exit(1)
+
+    todo_id, old_title, old_desc, old_status, old_prio, old_due, old_reminder = row
+
+    new_title = title if title is not None else old_title
+    new_desc = description if description is not None else old_desc
+    new_prio = priority if priority is not None else old_prio
+
+    if new_prio not in ("low", "medium", "high"):
+        console.print("[red]Error: Priority must be 'low', 'medium', or 'high'.[/red]")
+        raise typer.Exit(1)
+
+    if due is not None:
+        if due.strip() == "":
+            new_due = None
+        else:
+            try:
+                new_due = parse_due_date(due)
+            except ValueError as e:
+                console.print(f"[red]Error: {e}[/red]")
+                raise typer.Exit(1)
+    else:
+        new_due = old_due
+
+    # If due date changes, reset reminder_sent to 0 so they can receive notifications again
+    reset_reminder = 0 if new_due != old_due else old_reminder
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE todos SET title = ?, description = ?, due_date = ?, priority = ?, "
+            "reminder_sent = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_title, new_desc, new_due, new_prio, reset_reminder, todo_id),
+        )
+        conn.commit()
+
+    console.print(f"[green]Task '[bold]{new_title}[/bold]' updated successfully.[/green]")
+
+
+@todo_app.command(name="complete")
+def todo_complete(
+    identifier: str = typer.Argument(..., autocompletion=complete_todo_identifier, help="ID or Title of the task to complete"),
+) -> None:
+    """Mark a task as completed."""
+    row = get_todo_by_identifier(identifier)
+    if not row:
+        console.print(f"[red]Error: Task '{identifier}' not found.[/red]")
+        raise typer.Exit(1)
+
+    todo_id, title, _, _, _, _, _ = row
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE todos SET status = 'done', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (todo_id,),
+        )
+        conn.commit()
+
+    console.print(f"[green]Task '[bold]{title}[/bold]' marked as completed![/green]")
+
+
+@todo_app.command(name="status")
+def todo_status(
+    identifier: str = typer.Argument(..., autocompletion=complete_todo_identifier, help="ID or Title of the task"),
+    status: str = typer.Argument(..., help="New status: todo, in_progress, done"),
+) -> None:
+    """Update a task's status."""
+    if status not in ("todo", "in_progress", "done"):
+        console.print("[red]Error: Status must be 'todo', 'in_progress', or 'done'.[/red]")
+        raise typer.Exit(1)
+
+    row = get_todo_by_identifier(identifier)
+    if not row:
+        console.print(f"[red]Error: Task '{identifier}' not found.[/red]")
+        raise typer.Exit(1)
+
+    todo_id, title, _, old_status, _, _, _ = row
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Reset reminder_sent if status changed from done back to todo/in_progress
+        reminder_val = 0 if status != "done" else 1
+        cursor.execute(
+            "UPDATE todos SET status = ?, reminder_sent = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, reminder_val, todo_id),
+        )
+        conn.commit()
+
+    console.print(f"[green]Status of task '[bold]{title}[/bold]' updated from '{old_status}' to '{status}'.[/green]")
+
+
+@todo_app.command(name="delete")
+def todo_delete(
+    identifier: str = typer.Argument(..., autocompletion=complete_todo_identifier, help="ID or Title of the task to delete"),
+) -> None:
+    """Permanently delete a task."""
+    row = get_todo_by_identifier(identifier)
+    if not row:
+        console.print(f"[red]Error: Task '{identifier}' not found.[/red]")
+        raise typer.Exit(1)
+
+    todo_id, title, _, _, _, _, _ = row
+
+    if typer.confirm(f"Are you sure you want to delete task '{title}'?"):
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+            conn.commit()
+        console.print(f"[green]Task '{title}' deleted successfully.[/green]")
+    else:
+        console.print("Deletion cancelled.")
+
+
+@todo_app.command(name="list")
+def todo_list(
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status: todo, in_progress, done"),
+    priority: Optional[str] = typer.Option(None, "--priority", "-p", help="Filter by priority: low, medium, high"),
+    all_items: bool = typer.Option(False, "--all", "-a", help="Show all tasks including completed ones"),
+) -> None:
+    """List todo tasks organized in a table."""
+    conditions = []
+    params = []
+
+    if status:
+        if status not in ("todo", "in_progress", "done"):
+            console.print("[red]Error: Status filter must be 'todo', 'in_progress', or 'done'.[/red]")
+            raise typer.Exit(1)
+        conditions.append("status = ?")
+        params.append(status)
+    elif not all_items:
+        conditions.append("status != 'done'")
+
+    if priority:
+        if priority not in ("low", "medium", "high"):
+            console.print("[red]Error: Priority filter must be 'low', 'medium', or 'high'.[/red]")
+            raise typer.Exit(1)
+        conditions.append("priority = ?")
+        params.append(priority)
+
+    query = "SELECT id, title, description, status, priority, due_date FROM todos"
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY due_date IS NULL ASC, due_date ASC, CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END ASC"
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+    if not rows:
+        console.print("[yellow]No tasks found matching your filters.[/yellow]")
+        return
+
+    table = Table(title="[bold magenta]Ostraca Todo List[/bold magenta]", border_style="magenta", box=box.ROUNDED)
+    table.add_column("ID", style="dim cyan", justify="center")
+    table.add_column("Status", justify="left")
+    table.add_column("Priority", justify="left")
+    table.add_column("Title & Description", style="white")
+    table.add_column("Due Date")
+
+    now = datetime.datetime.now()
+
+    for row in rows:
+        tid, title, desc, stat, prio, due = row
+
+        if stat == "done":
+            status_str = "[green]✔ Done[/green]"
+        elif stat == "in_progress":
+            status_str = "[yellow]◑ In Prog[/yellow]"
+        else:
+            status_str = "[red]○ Todo[/red]"
+
+        if prio == "high":
+            prio_str = "[bold red]▲ High[/bold red]"
+        elif prio == "medium":
+            prio_str = "[bold yellow]◆ Med[/bold yellow]"
+        else:
+            prio_str = "[bold blue]▼ Low[/bold blue]"
+
+        title_text = Text()
+        title_text.append(title, style="bold")
+        if desc:
+            title_text.append(f"\n{desc}", style="dim italic")
+
+        if due:
+            try:
+                due_dt = datetime.datetime.strptime(due, "%Y-%m-%d %H:%M")
+                due_display = due_dt.strftime("%m-%d-%Y %H:%M")
+                if due_dt < now:
+                    diff = now - due_dt
+                    if diff.days > 0:
+                        rel = f"Overdue {diff.days}d"
+                    elif diff.seconds // 3600 > 0:
+                        rel = f"Overdue {diff.seconds // 3600}h"
+                    else:
+                        rel = f"Overdue {diff.seconds // 60}m"
+                    due_str = f"[bold red]{due_display} ({rel})[/bold red]"
+                else:
+                    diff = due_dt - now
+                    if diff.days > 0:
+                        rel = f"In {diff.days}d"
+                    elif diff.seconds // 3600 > 0:
+                        rel = f"In {diff.seconds // 3600}h"
+                    else:
+                        rel = f"In {diff.seconds // 60}m"
+                    
+                    if diff.days == 0:
+                        due_str = f"[yellow]{due_display} ({rel})[/yellow]"
+                    else:
+                        due_str = f"[green]{due_display} ({rel})[/green]"
+            except Exception:
+                due_str = f"[white]{due}[/white]"
+        else:
+            due_str = "[dim]No due date[/dim]"
+
+        table.add_row(tid, status_str, prio_str, title_text, due_str)
+
+    console.print(table)
+
+
+@todo_app.command(name="calendar")
+def todo_calendar(
+    view: str = typer.Option("month", "--view", "-v", help="Calendar view: day, week, month"),
+    date_str: Optional[str] = typer.Option(None, "--date", "-d", help="Base date (MM-DD-YYYY), defaults to today"),
+) -> None:
+    """Show a calendar view (day/week/month) of upcoming tasks."""
+    if view not in ("day", "week", "month"):
+        console.print("[red]Error: View must be 'day', 'week', or 'month'.[/red]")
+        raise typer.Exit(1)
+
+    now = datetime.datetime.now()
+    if date_str:
+        try:
+            base_date = datetime.datetime.strptime(date_str.strip(), "%m-%d-%Y")
+        except ValueError:
+            console.print("[red]Error: Base date must be in MM-DD-YYYY format.[/red]")
+            raise typer.Exit(1)
+    else:
+        base_date = now
+
+    from rich.panel import Panel
+
+    if view == "month":
+        year = base_date.year
+        month = base_date.month
+
+        _, last_day = calendar.monthrange(year, month)
+        start_month_str = f"{year:04d}-{month:02d}-01 00:00"
+        end_month_str = f"{year:04d}-{month:02d}-{last_day:02d} 23:59"
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, title, status, priority, due_date FROM todos "
+                "WHERE due_date >= ? AND due_date <= ? "
+                "ORDER BY due_date ASC",
+                (start_month_str, end_month_str),
+            )
+            tasks = cursor.fetchall()
+
+        tasks_by_day = {}
+        for t in tasks:
+            due_str = t[4]
+            try:
+                dt = datetime.datetime.strptime(due_str, "%Y-%m-%d %H:%M")
+                tasks_by_day.setdefault(dt.day, []).append(t)
+            except ValueError:
+                pass
+
+        table = Table(
+            title=f"[bold magenta]Calendar: {calendar.month_name[month]} {year}[/bold magenta]",
+            box=box.ROUNDED,
+            expand=True,
+            border_style="magenta",
+            show_lines=True,
+        )
+        
+        days_of_week = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        for day_name in days_of_week:
+            table.add_column(day_name, justify="left", style="white", ratio=1)
+
+        cal = calendar.Calendar(firstweekday=6)
+        month_matrix = cal.monthdayscalendar(year, month)
+        target_height = 5
+        
+        for week in month_matrix:
+            week_cells = []
+            for day in week:
+                if day == 0:
+                    week_cells.append("\n" * (target_height - 1))
+                else:
+                    cell_lines = []
+                    is_today = (day == now.day and month == now.month and year == now.year)
+                    if is_today:
+                        cell_lines.append(f"[bold yellow reverse] {day:02d} (Today) [/bold yellow reverse]")
+                    else:
+                        cell_lines.append(f"[bold white]{day:02d}[/bold white]")
+                    
+                    day_tasks = tasks_by_day.get(day, [])
+                    if day_tasks:
+                        cell_lines.append("[dim]──────────[/dim]")
+                        slots_left = target_height - 2
+                        
+                        if len(day_tasks) <= slots_left:
+                            for tid, title, status, priority, _ in day_tasks:
+                                stat_icon = "✔" if status == "done" else ("◑" if status == "in_progress" else "○")
+                                stat_color = "green" if status == "done" else ("yellow" if status == "in_progress" else "red")
+                                prio_color = "red" if priority == "high" else ("yellow" if priority == "medium" else "blue")
+                                
+                                trunc_title = title[:12] + ".." if len(title) > 12 else title
+                                cell_lines.append(
+                                    f"[{stat_color}]{stat_icon}[/{stat_color}] "
+                                    f"[{prio_color}]{tid}[/{prio_color}] "
+                                    f"{trunc_title}"
+                                )
+                        else:
+                            for tid, title, status, priority, _ in day_tasks[:slots_left - 1]:
+                                stat_icon = "✔" if status == "done" else ("◑" if status == "in_progress" else "○")
+                                stat_color = "green" if status == "done" else ("yellow" if status == "in_progress" else "red")
+                                prio_color = "red" if priority == "high" else ("yellow" if priority == "medium" else "blue")
+                                
+                                trunc_title = title[:12] + ".." if len(title) > 12 else title
+                                cell_lines.append(
+                                    f"[{stat_color}]{stat_icon}[/{stat_color}] "
+                                    f"[{prio_color}]{tid}[/{prio_color}] "
+                                    f"{trunc_title}"
+                                )
+                            remaining = len(day_tasks) - (slots_left - 1)
+                            cell_lines.append(f"[dim]+ {remaining} more...[/dim]")
+                    
+                    while len(cell_lines) < target_height:
+                        cell_lines.append("")
+                    week_cells.append("\n".join(cell_lines[:target_height]))
+            table.add_row(*week_cells)
+        console.print(table)
+
+    elif view == "week":
+        start_of_week = base_date - datetime.timedelta(days=base_date.weekday())
+        
+        grid = Table.grid(expand=True, padding=1)
+        grid.add_column(ratio=1)
+        grid.add_column(ratio=1)
+
+        panels = []
+        for i in range(7):
+            day_dt = start_of_week + datetime.timedelta(days=i)
+            start_day_str = day_dt.replace(hour=0, minute=0).strftime("%Y-%m-%d %H:%M")
+            end_day_str = day_dt.replace(hour=23, minute=59).strftime("%Y-%m-%d %H:%M")
+
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id, title, status, priority, due_date FROM todos "
+                    "WHERE due_date >= ? AND due_date <= ? "
+                    "ORDER BY due_date ASC",
+                    (start_day_str, end_day_str),
+                )
+                day_tasks = cursor.fetchall()
+
+            day_lines = []
+            if day_tasks:
+                for tid, title, status, priority, due_str in day_tasks:
+                    try:
+                        dt = datetime.datetime.strptime(due_str, "%Y-%m-%d %H:%M")
+                        time_str = dt.strftime("%H:%M")
+                    except ValueError:
+                        time_str = "23:59"
+                    
+                    stat_icon = "✔" if status == "done" else ("◑" if status == "in_progress" else "○")
+                    stat_color = "green" if status == "done" else ("yellow" if status == "in_progress" else "red")
+                    prio_icon = "▲" if priority == "high" else ("◆" if priority == "medium" else "▼")
+                    prio_color = "red" if priority == "high" else ("yellow" if priority == "medium" else "blue")
+
+                    day_lines.append(
+                        f"[{stat_color}]{stat_icon}[/{stat_color}] "
+                        f"[{prio_color}]{prio_icon}[/{prio_color}] "
+                        f"[dim]{time_str}[/dim] [cyan]{tid}[/cyan] [bold]{title}[/bold]"
+                    )
+            else:
+                day_lines.append("[dim]No tasks scheduled[/dim]")
+
+            day_label = day_dt.strftime("%A, %m-%d-%Y")
+            is_today = (day_dt.date() == now.date())
+            border_style = "yellow" if is_today else "magenta"
+            panel_title = f"[bold yellow]{day_label} (Today)[/bold yellow]" if is_today else f"[bold white]{day_label}[/bold white]"
+
+            panels.append(
+                Panel(
+                    "\n".join(day_lines),
+                    title=panel_title,
+                    border_style=border_style,
+                    box=box.ROUNDED,
+                )
+            )
+
+        grid.add_row(panels[0], panels[1])
+        grid.add_row(panels[2], panels[3])
+        grid.add_row(panels[4], panels[5])
+        grid.add_row(panels[6], "")
+        
+        console.print(Panel(grid, title="[bold magenta]Weekly Task Calendar[/bold magenta]", border_style="magenta", box=box.ROUNDED))
+
+    elif view == "day":
+        start_day_str = base_date.replace(hour=0, minute=0).strftime("%Y-%m-%d %H:%M")
+        end_day_str = base_date.replace(hour=23, minute=59).strftime("%Y-%m-%d %H:%M")
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, title, description, status, priority, due_date FROM todos "
+                "WHERE due_date >= ? AND due_date <= ? "
+                "ORDER BY due_date ASC",
+                (start_day_str, end_day_str),
+            )
+            day_tasks = cursor.fetchall()
+
+        table = Table(title=f"Agenda for {base_date.strftime('%A, %m-%d-%Y')}", box=box.ROUNDED, border_style="magenta", expand=True)
+        table.add_column("Time", justify="center", style="dim cyan")
+        table.add_column("ID", justify="center", style="dim cyan")
+        table.add_column("Status", justify="center")
+        table.add_column("Priority", justify="center")
+        table.add_column("Title & Description")
+
+        if day_tasks:
+            for tid, title, desc, status, priority, due_str in day_tasks:
+                try:
+                    dt = datetime.datetime.strptime(due_str, "%Y-%m-%d %H:%M")
+                    time_str = dt.strftime("%H:%M")
+                except ValueError:
+                    time_str = "23:59"
+                
+                stat_icon = "✔ Done" if status == "done" else ("◑ In Prog" if status == "in_progress" else "○ Todo")
+                stat_color = "green" if status == "done" else ("yellow" if status == "in_progress" else "red")
+                prio_icon = "▲ High" if priority == "high" else ("◆ Med" if priority == "medium" else "▼ Low")
+                prio_color = "red" if priority == "high" else ("yellow" if priority == "medium" else "blue")
+
+                title_text = Text()
+                title_text.append(title, style="bold")
+                if desc:
+                    title_text.append(f"\n{desc}", style="dim italic")
+
+                table.add_row(
+                    time_str,
+                    tid,
+                    f"[{stat_color}]{stat_icon}[/{stat_color}]",
+                    f"[{prio_color}]{prio_icon}[/{prio_color}]",
+                    title_text
+                )
+        else:
+            table.add_row("-", "-", "-", "-", "[dim]No tasks scheduled for this day.[/dim]")
+
+        console.print(table)
+
+
+@todo_app.command(name="check-reminders")
+def todo_check_reminders(
+    buffer_minutes: int = typer.Option(15, "--buffer", "-b", help="Check for tasks due within this many minutes"),
+) -> None:
+    """Check for upcoming tasks and trigger system notifications."""
+    now = datetime.datetime.now()
+    limit = now + datetime.timedelta(minutes=buffer_minutes)
+
+    limit_str = limit.strftime("%Y-%m-%d %H:%M")
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, title, due_date, priority FROM todos "
+            "WHERE status != 'done' AND due_date <= ? AND reminder_sent = 0",
+            (limit_str,),
+        )
+        rows = cursor.fetchall()
+
+    if not rows:
+        return
+
+    has_notify = shutil.which("notify-send") is not None
+    notified_ids = []
+
+    for tid, title, due, priority in rows:
+        urgency = "normal"
+        if priority == "high":
+            urgency = "critical"
+        elif priority == "low":
+            urgency = "low"
+
+        message = f"Task due at {due}"
+        if has_notify:
+            try:
+                # We need to run notify-send. Let's make sure it handles quotes properly
+                subprocess.run(
+                    ["notify-send", "-a", "Ostraca", "-u", urgency, f"Ostraca Task Due: {title}", message],
+                    check=False,
+                )
+                notified_ids.append(tid)
+            except Exception as e:
+                console.print(f"[red]Error sending notification for task '{title}': {e}[/red]")
+        else:
+            console.print(f"[yellow]Reminder (notify-send not installed): {title} (Due: {due})[/yellow]")
+            notified_ids.append(tid)
+
+    if notified_ids:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in notified_ids)
+            cursor.execute(
+                f"UPDATE todos SET reminder_sent = 1 WHERE id IN ({placeholders})",
+                notified_ids,
+            )
+            conn.commit()
+        console.print(f"[green]Sent {len(notified_ids)} task reminder notification(s).[/green]")
+
+
+@todo_app.command(name="setup-systemd")
+def todo_setup_systemd() -> None:
+    """Print instructions and generate systemd service and timer files for user reminders."""
+    import sys
+    
+    ost_path = shutil.which("ost")
+    if not ost_path:
+        ost_path = Path(sys.executable).parent / "ost"
+        if not ost_path.exists():
+            ost_path = "ost"
+            
+    service_content = f"""[Unit]
+Description=Ostraca CLI Todo Reminders Service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart={ost_path} todo check-reminders
+"""
+
+    timer_content = """[Unit]
+Description=Ostraca CLI Todo Reminders Timer
+
+[Timer]
+OnBootSec=1m
+OnUnitActiveSec=5m
+Unit=ostraca-reminders.service
+
+[Install]
+WantedBy=timers.target
+"""
+
+    user_systemd_dir = Path.home() / ".config" / "systemd" / "user"
+    
+    console.print("[bold magenta]Systemd Configuration Setup[/bold magenta]")
+    console.print(f"Detected `ost` executable at: [cyan]{ost_path}[/cyan]")
+    console.print(f"User systemd directory: [cyan]{user_systemd_dir}[/cyan]\n")
+
+    if typer.confirm("Would you like to write the service and timer files automatically?"):
+        try:
+            user_systemd_dir.mkdir(parents=True, exist_ok=True)
+            
+            service_file = user_systemd_dir / "ostraca-reminders.service"
+            timer_file = user_systemd_dir / "ostraca-reminders.timer"
+            
+            with open(service_file, "w") as f:
+                f.write(service_content)
+            with open(timer_file, "w") as f:
+                f.write(timer_content)
+                
+            console.print(f"[green]✓ Wrote {service_file}[/green]")
+            console.print(f"[green]✓ Wrote {timer_file}[/green]")
+            
+            console.print("\n[bold green]To enable and start the reminder service timer, run the following commands:[/bold green]")
+            console.print("  [bold cyan]systemctl --user daemon-reload[/bold cyan]")
+            console.print("  [bold cyan]systemctl --user enable --now ostraca-reminders.timer[/bold cyan]")
+            console.print("\n[bold green]To check the status of your timer:[/bold green]")
+            console.print("  [bold cyan]systemctl --user status ostraca-reminders.timer[/bold cyan]")
+            console.print("  [bold cyan]journalctl --user -u ostraca-reminders.service[/bold cyan]")
+        except Exception as e:
+            console.print(f"[red]Error writing systemd files: {e}[/red]")
+    else:
+        console.print("\n[bold]You can manually create the following files under `~/.config/systemd/user/`:[/bold]")
+        console.print(f"\n[bold cyan]1. ostraca-reminders.service[/bold cyan]\n[dim]{service_content}[/dim]")
+        console.print(f"\n[bold cyan]2. ostraca-reminders.timer[/bold cyan]\n[dim]{timer_content}[/dim]")
+
+
+# ─── TODO MCP INTEGRATIONS ───────────────────────────────────────────────────
+
+@mcp.tool()
+def list_ostraca_todos(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    all_items: bool = False
+) -> str:
+    """
+    List todo tasks in your personal knowledge base.
+    
+    Args:
+        status: Filter by status ('todo', 'in_progress', 'done').
+        priority: Filter by priority ('low', 'medium', 'high').
+        all_items: If True, include completed tasks. Defaults to False.
+    """
+    conditions = []
+    params = []
+
+    if status:
+        if status not in ("todo", "in_progress", "done"):
+            return "Error: Status filter must be 'todo', 'in_progress', or 'done'."
+            conditions.append("status = ?")
+            params.append(status)
+    elif not all_items:
+        conditions.append("status != 'done'")
+
+    if priority:
+        if priority not in ("low", "medium", "high"):
+            return "Error: Priority filter must be 'low', 'medium', or 'high'."
+        conditions.append("priority = ?")
+        params.append(priority)
+
+    query = "SELECT id, title, description, status, priority, due_date FROM todos"
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY due_date IS NULL ASC, due_date ASC, CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END ASC"
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+    if not rows:
+        return "No tasks found matching your filters."
+
+    output = []
+    for r in rows:
+        tid, title, desc, stat, prio, due = r
+        desc_str = f" | Description: {desc}" if desc else ""
+        due_str = f" | Due: {due}" if due else ""
+        output.append(f"[{tid}] {title} (Status: {stat} | Priority: {prio}{desc_str}{due_str})")
+
+    return "\n".join(output)
+
+
+@mcp.tool()
+def create_ostraca_todo(
+    title: str,
+    description: Optional[str] = None,
+    due: Optional[str] = None,
+    priority: str = "medium"
+) -> str:
+    """
+    Create a new task/todo item in your personal knowledge base.
+    
+    Args:
+        title: Title of the task.
+        description: Detailed explanation of the task.
+        due: Due date (e.g., 'MM-DD-YYYY HH:MM', 'MM-DD-YYYY', 'today', 'tomorrow', '+3d').
+        priority: Priority ('low', 'medium', 'high'). Defaults to 'medium'.
+    """
+    if priority not in ("low", "medium", "high"):
+        return "Error: Priority must be 'low', 'medium', or 'high'."
+
+    try:
+        parsed_due = parse_due_date(due)
+    except ValueError as e:
+        return f"Error: {e}"
+
+    todo_id = str(shortuuid.uuid())[:8]
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO todos (id, title, description, status, priority, due_date, reminder_sent) "
+                "VALUES (?, ?, ?, 'todo', ?, ?, 0)",
+                (todo_id, title, description, priority, parsed_due),
+            )
+            conn.commit()
+        except sqlite3.Error as e:
+            return f"Database error: {e}"
+
+    return f"Task '{title}' created successfully with ID {todo_id}."
+
+
+@mcp.tool()
+def complete_ostraca_todo(identifier: str) -> str:
+    """
+    Mark a todo item as completed by its ID or Title.
+    """
+    row = get_todo_by_identifier(identifier)
+    if not row:
+        return f"Error: Task '{identifier}' not found."
+
+    todo_id, title, _, _, _, _, _ = row
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE todos SET status = 'done', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (todo_id,),
+        )
+        conn.commit()
+
+    return f"Task '{title}' ({todo_id}) marked as completed."
 
 
 if __name__ == "__main__":

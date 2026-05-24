@@ -145,6 +145,30 @@ def init_db() -> None:
         # Index the 'title' column to optimize ID/Title note lookups (avoiding table scans)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_title ON notes (title)")
 
+        # 1b. Todos Table: Stores todo items
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS todos (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT,
+                status TEXT CHECK(status IN ('todo', 'in_progress', 'done')) NOT NULL DEFAULT 'todo',
+                priority TEXT CHECK(priority IN ('low', 'medium', 'high')) NOT NULL DEFAULT 'medium',
+                due_date TEXT,
+                reminder_sent INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_todos_due_date ON todos (due_date)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_todos_status ON todos (status)")
+
+        # Safe migration to add reminder_sent column to existing tables if needed
+        try:
+            cursor.execute("ALTER TABLE todos ADD COLUMN reminder_sent INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+
         # 2. Search Index (FTS5): External content table for high-performance searching
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
