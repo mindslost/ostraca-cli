@@ -15,6 +15,7 @@ import html
 import datetime
 import calendar
 import shutil
+import sys
 from typing import List, Optional, Tuple
 from pathlib import Path
 
@@ -1556,6 +1557,29 @@ def todo_calendar(
         console.print(table)
 
 
+def send_notification(title: str, message: str, urgency: str = "normal") -> bool:
+    """Send a platform-native desktop notification (supports Linux & macOS)."""
+    if sys.platform == "darwin":
+        safe_title = title.replace('"', '\\"')
+        safe_message = message.replace('"', '\\"')
+        script = f'display notification "{safe_message}" with title "{safe_title}"'
+        try:
+            subprocess.run(["osascript", "-e", script], check=False)
+            return True
+        except Exception:
+            return False
+    elif shutil.which("notify-send"):
+        try:
+            subprocess.run(
+                ["notify-send", "-a", "Ostraca", "-u", urgency, title, message],
+                check=False,
+            )
+            return True
+        except Exception:
+            return False
+    return False
+
+
 @todo_app.command(name="check-reminders")
 def todo_check_reminders(
     buffer_minutes: int = typer.Option(15, "--buffer", "-b", help="Check for tasks due within this many minutes"),
@@ -1578,7 +1602,6 @@ def todo_check_reminders(
     if not rows:
         return
 
-    has_notify = shutil.which("notify-send") is not None
     notified_ids = []
 
     for tid, title, due, priority in rows:
@@ -1589,18 +1612,11 @@ def todo_check_reminders(
             urgency = "low"
 
         message = f"Task due at {due}"
-        if has_notify:
-            try:
-                # We need to run notify-send. Let's make sure it handles quotes properly
-                subprocess.run(
-                    ["notify-send", "-a", "Ostraca", "-u", urgency, f"Ostraca Task Due: {title}", message],
-                    check=False,
-                )
-                notified_ids.append(tid)
-            except Exception as e:
-                console.print(f"[red]Error sending notification for task '{title}': {e}[/red]")
+        # Trigger native desktop notification (AppleScript on macOS, notify-send on Linux)
+        if send_notification(f"Ostraca Task Due: {title}", message, urgency):
+            notified_ids.append(tid)
         else:
-            console.print(f"[yellow]Reminder (notify-send not installed): {title} (Due: {due})[/yellow]")
+            console.print(f"[yellow]Reminder: {title} (Due: {due})[/yellow]")
             notified_ids.append(tid)
 
     if notified_ids:

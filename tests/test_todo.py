@@ -189,3 +189,25 @@ def test_todo_mcp_tools():
         cursor = conn.cursor()
         cursor.execute("SELECT status FROM todos WHERE id = ?", (tid,))
         assert cursor.fetchone()[0] == "done"
+
+
+def test_send_notification(monkeypatch):
+    called_cmds = []
+    monkeypatch.setattr("subprocess.run", lambda cmd, **kwargs: called_cmds.append(cmd))
+
+    # Test macOS notification (mock sys.platform to darwin)
+    monkeypatch.setattr("sys.platform", "darwin")
+    res = main.send_notification("Title Mac", "Message Mac")
+    assert res is True
+    assert len(called_cmds) == 1
+    assert "osascript" in called_cmds[0]
+    assert "Title Mac" in called_cmds[0][2]
+
+    # Test Linux notification with notify-send available
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/notify-send" if name == "notify-send" else None)
+    res = main.send_notification("Title Linux", "Message Linux")
+    assert res is True
+    assert len(called_cmds) == 2
+    assert "notify-send" in called_cmds[1]
+    assert "Title Linux" in called_cmds[1]
